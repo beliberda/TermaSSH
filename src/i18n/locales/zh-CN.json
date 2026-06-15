@@ -160,6 +160,8 @@
   },
   "files": {
     "title": "文件",
+    "pathCopiedToClipboard": "路径已复制到剪贴板",
+    "copyPathFailed": "复制路径失败",
     "ftpConnecting": "正在通过 FTP 连接...",
     "ftpError": "FTP 连接错误",
     "noSession": "连接 SSH 或 FTP 会话以浏览文件",

@@ -14,6 +14,8 @@ import {
 } from "@utils/syncBrowse";
 import type { RemoteBrowserStore } from "./RemoteBrowserStore";
 import type { SettingsStore } from "./SettingsStore";
+import { notify } from "@/notify";
+import { i18n } from "@i18n/index";
 
 function mapLocalError(e: unknown, fallbackCode: string): AppError {
   const payload = getIpcErrorPayload(e);
@@ -285,8 +287,9 @@ export class LocalBrowserStore {
   async copyPath(path: string) {
     try {
       await navigator.clipboard.writeText(path);
+      notify.success(i18n.t("files.pathCopiedToClipboard"));
     } catch (e) {
-      console.error("[LocalBrowserStore] copyPath failed:", e);
+      notify.error(i18n.t("files.copyPathFailed"));
     }
   }
 

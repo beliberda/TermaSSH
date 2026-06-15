@@ -1,10 +1,18 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--border, #333);
+}
+
 .crumbs {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  padding: 4px 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0 4px 8px;
   font-size: 12px;
-  border-bottom: 1px solid var(--border, #333);
 }
 
 .item {
@@ -32,4 +40,25 @@
 
 .link:hover {
   background: var(--hover, rgba(255, 255, 255, 0.06));
+}
+
+.copyBtn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: 4px 8px 4px 0;
+  padding: 0;
+  border: 1px solid var(--border, #333);
+  border-radius: 4px;
+  background: var(--hover, rgba(255, 255, 255, 0.04));
+  color: var(--text-muted, #aaa);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  background: var(--accent, #4a9eff);
+  color: var(--bg, #1a1a1a);
+  border-color: var(--accent, #4a9eff);
 }

@@ -160,6 +160,8 @@
   },
   "files": {
     "title": "File",
+    "pathCopiedToClipboard": "Percorso copiato negli appunti",
+    "copyPathFailed": "Impossibile copiare il percorso",
     "ftpConnecting": "Connessione FTP in corso...",
     "ftpError": "Errore connessione FTP",
     "noSession": "Connetti una sessione SSH o FTP per sfogliare i file",

@@ -97,7 +97,9 @@ export const FilePane = observer(function FilePane({
       <div className={styles.paneTitle}>{paneLabel}</div>
       <FileBreadcrumbs
         crumbs={store.breadcrumbs}
+        currentPath={store.cwd}
         onNavigate={(path) => store.navigateTo(path)}
+        onCopyPath={(path) => void store.copyPath(path)}
       />
       <FileTable
         entries={store.entries}
