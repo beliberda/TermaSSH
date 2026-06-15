@@ -265,7 +265,9 @@ impl ConnectionPool {
             } => {
                 crate::services::sftp::list_files_recursive(ssh_handle, sftp, remote_path).await
             }
-            ConnectionKind::Ftp { .. } => Err(IpcError::new("sftp.notSupportedForFtp")),
+            ConnectionKind::Ftp { client } => {
+                ftp::list_files_recursive(client, remote_path).await
+            }
         }
     }
 

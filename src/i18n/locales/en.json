@@ -18,6 +18,10 @@
     "status": "Status",
     "executable": "Executable"
   },
+  "notify": {
+    "pathCopied": "Path copied",
+    "copyPathFailed": "Failed to copy path"
+  },
   "sidebar": {
     "tabs": {
       "sessions": "Sessions",
@@ -253,6 +257,10 @@
       "running": "{{count}} active",
       "active": "Transferring",
       "clearCompleted": "Clear completed",
+      "cancel": "Cancel",
+      "cancelAll": "Cancel all",
+      "preparing": "Scanning…",
+      "preparingDir": "Scanning «{{name}}»…",
       "status": {
         "queued": "Queued",
         "running": "Transferring",

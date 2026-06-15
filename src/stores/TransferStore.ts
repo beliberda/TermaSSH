@@ -8,12 +8,19 @@ import type {
 import { MAX_CONCURRENT_TRANSFERS_DEFAULT } from '@/types/settings';
 import * as localIpc from '@ipc/local';
 import * as sftpIpc from '@ipc/sftp';
+import * as transferIpc from '@ipc/transfer';
+import { getIpcErrorPayload } from '@ipc/client';
 import { listenTransferProgress } from '@ipc/events';
 import { basename, joinLocalPath, joinRemotePath } from '@utils/filePaths';
 import type { LocalBrowserStore } from './LocalBrowserStore';
 import type { RemoteBrowserStore } from './RemoteBrowserStore';
 import type { SessionStore } from './SessionStore';
 import type { SettingsStore } from './SettingsStore';
+
+export interface PreparingDownload {
+  remotePath: string;
+  label: string;
+}
 
 function joinLocalRelative(base: string, relativePath: string): string {
   const sep = base.includes('\\') ? '\\' : '/';
@@ -29,6 +36,8 @@ export class TransferStore {
   tasks: TransferTask[] = [];
   queueExpanded = true;
   processing = false;
+  queueDrainPending = false;
+  preparingDownloads = new Map<string, PreparingDownload>();
   pendingConflict: FileConflictInfo | null = null;
   private conflictResolve: ((value: 'skip' | 'replace') => void) | null = null;
   private sessionOverridePolicy: FileConflictPolicy | null = null;
@@ -40,6 +49,8 @@ export class TransferStore {
   private settingsStore: SettingsStore | null = null;
   private activeWorkers = 0;
   private conflictSession: SessionConfig | null = null;
+  private cancelledIds = new Set<string>();
+  private conflictMutex: Promise<void> = Promise.resolve();
 
   constructor() {
     makeAutoObservable(this);
@@ -66,10 +77,16 @@ export class TransferStore {
     this.unlistenFns.push(unlisten);
   }
 
+  get preparingCount(): number {
+    return this.preparingDownloads.size;
+  }
+
   get activeCount(): number {
-    return this.tasks.filter(
-      (t) => t.status === 'running' || t.status === 'queued',
-    ).length;
+    return (
+      this.tasks.filter(
+        (t) => t.status === 'running' || t.status === 'queued',
+      ).length + this.preparingCount
+    );
   }
 
   get runningCount(): number {
@@ -78,6 +95,12 @@ export class TransferStore {
 
   get hasActiveTransfers(): boolean {
     return this.activeCount > 0;
+  }
+
+  get cancellableCount(): number {
+    return this.tasks.filter(
+      (t) => t.status === 'queued' || t.status === 'running',
+    ).length;
   }
 
   private get maxConcurrent(): number {
@@ -89,6 +112,31 @@ export class TransferStore {
 
   setQueueExpanded(value: boolean) {
     this.queueExpanded = value;
+  }
+
+  isRemotePathDownloadBusy(remotePath: string, isDirectory: boolean): boolean {
+    const normalized = remotePath.replace(/\/+$/, '') || '/';
+    if (this.preparingDownloads.has(normalized)) return true;
+
+    return this.tasks.some((t) => {
+      if (t.direction !== 'download') return false;
+      if (t.status !== 'queued' && t.status !== 'running') return false;
+      if (!isDirectory) {
+        return t.remotePath === normalized;
+      }
+      return (
+        t.remotePath === normalized ||
+        t.remotePath.startsWith(`${normalized}/`)
+      );
+    });
+  }
+
+  isDownloadSelectionDisabled(): boolean {
+    const selected = this.remoteBrowserStore?.selectedEntries ?? [];
+    if (selected.length === 0) return true;
+    return selected.some((e) =>
+      this.isRemotePathDownloadBusy(e.path, e.isDirectory),
+    );
   }
 
   resolveConflict(action: 'skip' | 'replace' | 'replaceAll', remember?: boolean) {
@@ -114,6 +162,39 @@ export class TransferStore {
     this.pendingConflict = null;
     this.conflictResolve?.('skip');
     this.conflictResolve = null;
+  }
+
+  cancelTask(id: string) {
+    const task = this.tasks.find((t) => t.id === id);
+    if (!task) return;
+
+    if (task.status === 'queued') {
+      runInAction(() => {
+        task.status = 'cancelled';
+      });
+      return;
+    }
+
+    if (task.status === 'running') {
+      this.cancelledIds.add(id);
+      void transferIpc.cancelTransfer(id);
+    }
+  }
+
+  cancelAll() {
+    const connectionId = this.remoteBrowserStore?.connectionId;
+    for (const task of this.tasks) {
+      if (task.status === 'queued') {
+        runInAction(() => {
+          task.status = 'cancelled';
+        });
+      } else if (task.status === 'running') {
+        this.cancelledIds.add(task.id);
+      }
+    }
+    if (connectionId) {
+      void transferIpc.cancelAllTransfers(connectionId);
+    }
   }
 
   enqueueUpload(
@@ -156,6 +237,13 @@ export class TransferStore {
 
     for (const entry of entries) {
       if (entry.isDirectory) {
+        const remoteKey = entry.path.replace(/\/+$/, '') || '/';
+        runInAction(() => {
+          this.preparingDownloads.set(remoteKey, {
+            remotePath: remoteKey,
+            label: entry.name,
+          });
+        });
         try {
           const files = await sftpIpc.sftpListRecursive(connectionId, entry.path);
           const dirBase = joinLocalPath(localDir, entry.name);
@@ -186,6 +274,10 @@ export class TransferStore {
             bytesDone: 0,
             bytesTotal: entry.size,
             error: e instanceof Error ? e.message : String(e),
+          });
+        } finally {
+          runInAction(() => {
+            this.preparingDownloads.delete(remoteKey);
           });
         }
       } else {
@@ -253,27 +345,44 @@ export class TransferStore {
   }
 
   private handleProgress(payload: TransferProgressPayload) {
+    if (this.cancelledIds.has(payload.transferId)) {
+      const task = this.tasks.find((t) => t.id === payload.transferId);
+      if (task && payload.status !== 'cancelled') {
+        return;
+      }
+    }
+
     const task = this.tasks.find((t) => t.id === payload.transferId);
     if (!task) return;
+
     runInAction(() => {
       task.bytesDone = payload.bytesDone;
       task.bytesTotal = payload.bytesTotal;
       if (payload.status === 'running') task.status = 'running';
       if (payload.status === 'done') task.status = 'done';
-      if (payload.status === 'error') task.status = 'error';
+      if (payload.status === 'error') {
+        task.status = this.cancelledIds.has(payload.transferId)
+          ? 'cancelled'
+          : 'error';
+      }
+      if (payload.status === 'cancelled') task.status = 'cancelled';
+      if (task.status === 'cancelled') {
+        this.cancelledIds.delete(payload.transferId);
+      }
     });
   }
 
   private async processQueue(session: SessionConfig | null = null) {
-    if (this.processing) {
-      if (session) this.conflictSession = session;
-      return;
-    }
-    this.processing = true;
     if (session) this.conflictSession = session;
 
+    if (this.processing) {
+      this.queueDrainPending = true;
+      return;
+    }
+
+    this.processing = true;
+
     try {
-      await this.resolveDownloadConflicts();
       await this.runWorkers();
     } finally {
       runInAction(() => {
@@ -283,34 +392,16 @@ export class TransferStore {
       this.remoteBrowserStore?.refresh();
       this.localBrowserStore?.refresh();
 
-      if (this.tasks.some((t) => t.status === 'queued')) {
+      const needsDrain =
+        this.queueDrainPending ||
+        this.tasks.some((t) => t.status === 'queued');
+
+      if (needsDrain) {
+        runInAction(() => {
+          this.queueDrainPending = false;
+        });
         void this.processQueue();
       }
-    }
-  }
-
-  private async resolveDownloadConflicts() {
-    const session = this.conflictSession;
-    let task = this.tasks.find(
-      (t) =>
-        t.status === 'queued' &&
-        t.direction === 'download' &&
-        !t.isDirectory,
-    );
-
-    while (task) {
-      const action = await this.checkConflict(task, session);
-      if (action === 'skip') {
-        runInAction(() => {
-          task!.status = 'skipped';
-        });
-      }
-      task = this.tasks.find(
-        (t) =>
-          t.status === 'queued' &&
-          t.direction === 'download' &&
-          !t.isDirectory,
-      );
     }
   }
 
@@ -322,9 +413,14 @@ export class TransferStore {
         const task = this.tasks.find((t) => t.status === 'queued');
         if (!task) break;
 
-        this.activeWorkers++;
+        runInAction(() => {
+          this.activeWorkers++;
+        });
+
         const worker = this.runTask(task).finally(() => {
-          this.activeWorkers--;
+          runInAction(() => {
+            this.activeWorkers--;
+          });
         });
         started.push(worker);
       }
@@ -345,6 +441,23 @@ export class TransferStore {
     if (this.sessionOverridePolicy) return this.sessionOverridePolicy;
     if (session?.fileConflictPolicy) return session.fileConflictPolicy;
     return this.settingsStore?.settings.defaultFileConflictPolicy ?? 'ask';
+  }
+
+  private async checkConflictSerial(
+    task: TransferTask,
+    session: SessionConfig | null,
+  ): Promise<'skip' | 'replace'> {
+    let release!: () => void;
+    const prev = this.conflictMutex;
+    this.conflictMutex = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prev;
+    try {
+      return await this.checkConflict(task, session);
+    } finally {
+      release();
+    }
   }
 
   private async checkConflict(
@@ -385,9 +498,39 @@ export class TransferStore {
   }
 
   private async runTask(task: TransferTask) {
+    if (this.cancelledIds.has(task.id)) {
+      runInAction(() => {
+        task.status = 'cancelled';
+        this.cancelledIds.delete(task.id);
+      });
+      return;
+    }
+
+    if (task.direction === 'download' && !task.isDirectory) {
+      const action = await this.checkConflictSerial(
+        task,
+        this.conflictSession,
+      );
+      if (action === 'skip') {
+        runInAction(() => {
+          task.status = 'skipped';
+        });
+        return;
+      }
+    }
+
+    if (this.cancelledIds.has(task.id)) {
+      runInAction(() => {
+        task.status = 'cancelled';
+        this.cancelledIds.delete(task.id);
+      });
+      return;
+    }
+
     runInAction(() => {
       task.status = 'running';
     });
+
     try {
       if (task.direction === 'upload') {
         await sftpIpc.sftpUpload(
@@ -406,12 +549,25 @@ export class TransferStore {
         );
       }
       runInAction(() => {
-        if (task.status === 'running') task.status = 'done';
+        if (this.cancelledIds.has(task.id)) {
+          task.status = 'cancelled';
+          this.cancelledIds.delete(task.id);
+        } else if (task.status === 'running') {
+          task.status = 'done';
+        }
       });
     } catch (e) {
+      const isCancelled =
+        this.cancelledIds.has(task.id) ||
+        getIpcErrorPayload(e).code === 'transfer.cancelled';
       runInAction(() => {
-        task.status = 'error';
-        task.error = e instanceof Error ? e.message : String(e);
+        if (isCancelled) {
+          task.status = 'cancelled';
+          this.cancelledIds.delete(task.id);
+        } else {
+          task.status = 'error';
+          task.error = e instanceof Error ? e.message : String(e);
+        }
       });
     }
   }

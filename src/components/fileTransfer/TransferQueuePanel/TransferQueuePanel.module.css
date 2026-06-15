@@ -4,16 +4,38 @@
   flex-shrink: 0;
 }
 
+.headerRow {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-elevated, #252525);
+}
+
 .header {
   display: flex;
+  flex: 1;
   justify-content: space-between;
-  width: 100%;
   padding: 6px 10px;
   border: none;
-  background: var(--surface-elevated, #252525);
+  background: transparent;
   color: var(--text, #eee);
   font-size: 12px;
   cursor: pointer;
+}
+
+.cancelAllBtn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: none;
+  border-left: 1px solid var(--border, #333);
+  background: transparent;
+  color: var(--text-muted, #aaa);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cancelAllBtn:hover {
+  color: var(--text, #eee);
+  background: var(--surface, #1e1e1e);
 }
 
 .list {
@@ -31,6 +53,7 @@
   justify-content: space-between;
   font-size: 12px;
   margin-bottom: 2px;
+  gap: 8px;
 }
 
 .fileName {
@@ -40,8 +63,29 @@
   max-width: 70%;
 }
 
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .status {
   color: var(--text-muted, #999);
+}
+
+.cancelBtn {
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #999);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cancelBtn:hover {
+  color: var(--text, #eee);
 }
 
 .barTrack {
@@ -55,6 +99,20 @@
   height: 100%;
   background: var(--accent, #4a9eff);
   transition: width 0.2s;
+}
+
+.barIndeterminate {
+  width: 40% !important;
+  animation: indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
 }
 
 .progress {

@@ -9,6 +9,7 @@ use crate::error::{IpcError, IpcResult};
 use crate::models::sftp::{RecursiveFileEntry, SftpEntry};
 use crate::services::sftp_transfer_pool::SftpTransferPool;
 use crate::services::ssh::SharedSshHandle;
+use crate::services::transfer_cancel::TransferCancelRegistry;
 use crate::utils::cache_paths::open_cache_path;
 use crate::utils::sftp_paths::normalize_remote_path;
 use crate::utils::transfer::TransferProgress;
@@ -183,6 +184,7 @@ pub async fn upload_file_via_pool(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     let guard = pool.acquire().await?;
     upload_file_with_session(
@@ -192,6 +194,7 @@ pub async fn upload_file_via_pool(
         app,
         connection_id,
         transfer_id,
+        cancel,
     )
     .await
 }
@@ -203,6 +206,7 @@ async fn upload_file_with_session(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     let local = Path::new(local_path);
     if !local.exists() {
@@ -231,7 +235,7 @@ async fn upload_file_with_session(
 
     let progress = match (app, connection_id, transfer_id) {
         (Some(app), Some(conn_id), Some(tid)) => Some(TransferProgress::new(
-            app, tid, conn_id, &file_name, "upload", file_size,
+            app, tid, conn_id, &file_name, "upload", file_size, cancel,
         )),
         _ => None,
     };
@@ -244,6 +248,12 @@ async fn upload_file_with_session(
     let mut buf = [0u8; CHUNK];
     let mut total_read = 0u64;
     loop {
+        if let Some(ref p) = progress {
+            p.check_cancelled()?;
+        } else if let Some(registry) = cancel {
+            registry.check_not_cancelled(transfer_id)?;
+        }
+
         let n = file
             .read(&mut buf)
             .map_err(|e| IpcError::with_str_detail("fs.readLocalFailed", "raw", e.to_string()))?;
@@ -280,6 +290,7 @@ pub async fn download_file_via_pool(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     let guard = pool.acquire().await?;
     download_file_with_session(
@@ -289,6 +300,7 @@ pub async fn download_file_via_pool(
         app,
         connection_id,
         transfer_id,
+        cancel,
     )
     .await
 }
@@ -301,6 +313,7 @@ pub async fn download_file(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     ensure_sftp(ssh_handle, cache).await?;
     let guard = cache.session.lock().await;
@@ -314,6 +327,7 @@ pub async fn download_file(
         app,
         connection_id,
         transfer_id,
+        cancel,
     )
     .await
 }
@@ -325,6 +339,7 @@ async fn download_file_with_session(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     let remote_path = normalize_remote_path(remote_path);
     let file_name = Path::new(&remote_path)
@@ -342,10 +357,16 @@ async fn download_file_with_session(
 
     let progress = match (app, connection_id, transfer_id) {
         (Some(app), Some(conn_id), Some(tid)) => Some(TransferProgress::new(
-            app, tid, conn_id, &file_name, "download", file_size,
+            app, tid, conn_id, &file_name, "download", file_size, cancel,
         )),
         _ => None,
     };
+
+    if let Some(ref p) = progress {
+        p.check_cancelled()?;
+    } else if let Some(registry) = cancel {
+        registry.check_not_cancelled(transfer_id)?;
+    }
 
     let data = sftp.read(&remote_path).await.map_err(|e| {
         if let Some(ref p) = progress {
@@ -386,6 +407,7 @@ pub async fn download_dir(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     let _browse = cache.browse_lock.lock().await;
     download_dir_inner(
@@ -396,6 +418,7 @@ pub async fn download_dir(
         app,
         connection_id,
         transfer_id,
+        cancel,
     )
     .await
 }
@@ -408,7 +431,12 @@ async fn download_dir_inner(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
+    if let Some(registry) = cancel {
+        registry.check_not_cancelled(transfer_id)?;
+    }
+
     let remote_path = normalize_remote_path(remote_path);
     let local_base = Path::new(local_dir);
 
@@ -418,6 +446,10 @@ async fn download_dir_inner(
     let entries = list_dir_unlocked(ssh_handle, cache, &remote_path).await?.0;
 
     for entry in entries {
+        if let Some(registry) = cancel {
+            registry.check_not_cancelled(transfer_id)?;
+        }
+
         let local_path = local_base.join(&entry.name);
         let local_path_str = local_path.to_string_lossy().into_owned();
         if entry.is_directory {
@@ -429,6 +461,7 @@ async fn download_dir_inner(
                 app,
                 connection_id,
                 transfer_id,
+                cancel,
             ))
             .await?;
         } else {
@@ -440,6 +473,7 @@ async fn download_dir_inner(
                 app,
                 connection_id,
                 transfer_id,
+                cancel,
             )
             .await?;
         }
@@ -710,6 +744,7 @@ async fn fetch_to_cache_inner(
         cache,
         &remote_path,
         &local_path_str,
+        None,
         None,
         None,
         None,

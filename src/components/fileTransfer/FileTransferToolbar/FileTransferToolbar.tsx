@@ -49,7 +49,7 @@ export const FileTransferToolbar = observer(function FileTransferToolbar() {
         className={styles.btn}
         title={t('fileTransfer.shortcuts.download')}
         onClick={() => transferStore.downloadSelected()}
-        disabled={remoteBrowserStore.selectedEntries.length === 0}
+        disabled={transferStore.isDownloadSelectionDisabled()}
       >
         {t('fileTransfer.download')}
         {shortcutSuffix(shortcuts.fileDownload)}

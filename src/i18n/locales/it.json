@@ -18,6 +18,10 @@
     "status": "Stato",
     "executable": "Eseguibile"
   },
+  "notify": {
+    "pathCopied": "Percorso copiato",
+    "copyPathFailed": "Impossibile copiare il percorso"
+  },
   "sidebar": {
     "tabs": { "sessions": "Sessioni", "files": "File" },
     "toolbar": {

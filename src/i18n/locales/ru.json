@@ -18,6 +18,10 @@
     "status": "Статус",
     "executable": "Executable"
   },
+  "notify": {
+    "pathCopied": "Путь скопирован",
+    "copyPathFailed": "Не удалось скопировать путь"
+  },
   "sidebar": {
     "tabs": {
       "sessions": "Сессии",
@@ -253,6 +257,10 @@
       "running": "{{count}} активных",
       "active": "Передаётся",
       "clearCompleted": "Очистить завершённые",
+      "cancel": "Отменить",
+      "cancelAll": "Отменить все",
+      "preparing": "Сканирование…",
+      "preparingDir": "Сканирование «{{name}}»…",
       "status": {
         "queued": "В очереди",
         "running": "Передаётся",

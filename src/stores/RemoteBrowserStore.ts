@@ -7,6 +7,7 @@ import { getIpcErrorPayload } from "@ipc/client";
 import * as sftpIpc from "@ipc/sftp";
 import * as localIpc from "@ipc/local";
 import { joinRemotePath, parentRemotePath } from "@utils/filePaths";
+import { copyPathWithNotify } from "@utils/copyPathNotify";
 import { openInEditor } from "@utils/openInEditor";
 import {
   isSyncBrowseEnabled,
@@ -340,11 +341,7 @@ export class RemoteBrowserStore {
   }
 
   async copyPath(path: string) {
-    try {
-      await navigator.clipboard.writeText(path);
-    } catch (e) {
-      console.error("[RemoteBrowserStore] copyPath failed:", e);
-    }
+    await copyPathWithNotify(path);
   }
 
   async openEntry(entry: SftpEntry) {

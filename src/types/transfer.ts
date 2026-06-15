@@ -7,7 +7,7 @@ export const transferProgressPayloadSchema = z.object({
   direction: z.enum(['upload', 'download']),
   bytesDone: z.number(),
   bytesTotal: z.number(),
-  status: z.enum(['running', 'done', 'error']),
+  status: z.enum(['running', 'done', 'error', 'cancelled']),
 });
 
 export type TransferProgressPayload = z.infer<typeof transferProgressPayloadSchema>;

@@ -5,6 +5,7 @@ import type { AppError } from '@i18n/types';
 import { i18n } from '@i18n/index';
 import { getIpcErrorPayload } from '@ipc/client';
 import * as sftpIpc from '@ipc/sftp';
+import { copyPathWithNotify } from '@utils/copyPathNotify';
 import { openInEditor } from '@utils/openInEditor';
 import type { TerminalStore } from './TerminalStore';
 import type { SessionStore } from './SessionStore';
@@ -374,11 +375,7 @@ export class FileBrowserStore {
   }
 
   async copyPath(path: string) {
-    try {
-      await navigator.clipboard.writeText(path);
-    } catch (e) {
-      console.error('[FileBrowserStore] copyPath failed:', e);
-    }
+    await copyPathWithNotify(path);
   }
 
   async openEntry(entry: SftpEntry) {

@@ -18,6 +18,10 @@
     "status": "状态",
     "executable": "可执行文件"
   },
+  "notify": {
+    "pathCopied": "路径已复制",
+    "copyPathFailed": "无法复制路径"
+  },
   "sidebar": {
     "tabs": { "sessions": "会话", "files": "文件" },
     "toolbar": {

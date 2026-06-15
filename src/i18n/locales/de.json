@@ -18,6 +18,10 @@
     "status": "Status",
     "executable": "Ausführbare Datei"
   },
+  "notify": {
+    "pathCopied": "Pfad kopiert",
+    "copyPathFailed": "Pfad konnte nicht kopiert werden"
+  },
   "sidebar": {
     "tabs": { "sessions": "Sitzungen", "files": "Dateien" },
     "toolbar": {

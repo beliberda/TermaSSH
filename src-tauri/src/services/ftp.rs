@@ -9,8 +9,9 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 
 use crate::error::{IpcError, IpcResult};
-use crate::models::sftp::SftpEntry;
+use crate::models::sftp::{RecursiveFileEntry, SftpEntry};
 use crate::models::SessionConfig;
+use crate::services::transfer_cancel::TransferCancelRegistry;
 use crate::services::ssh::CONNECT_TIMEOUT_SECS;
 use crate::utils::cache_paths::open_cache_path;
 use crate::utils::sftp_paths::normalize_remote_path;
@@ -108,6 +109,7 @@ pub async fn upload_file(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     let local = Path::new(local_path);
     if !local.exists() {
@@ -143,6 +145,7 @@ pub async fn upload_file(
             &file_name,
             "upload",
             file_size,
+            cancel,
         )),
         _ => None,
     };
@@ -151,6 +154,12 @@ pub async fn upload_file(
     let mut file = tokio::fs::File::open(local)
         .await
         .map_err(|e| IpcError::with_str_detail("fs.openLocalFailed", "raw", e.to_string()))?;
+
+    if let Some(ref p) = progress {
+        p.check_cancelled()?;
+    } else if let Some(registry) = cancel {
+        registry.check_not_cancelled(transfer_id)?;
+    }
 
     let mut ftp = client.lock().await;
     let result = ftp
@@ -177,6 +186,7 @@ pub async fn download_file(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
     let remote_path = normalize_remote_path(remote_path);
     let file_name = Path::new(&remote_path)
@@ -204,11 +214,18 @@ pub async fn download_file(
             &file_name,
             "download",
             0,
+            cancel,
         )),
         _ => None,
     };
 
     loop {
+        if let Some(ref p) = progress {
+            p.check_cancelled()?;
+        } else if let Some(registry) = cancel {
+            registry.check_not_cancelled(transfer_id)?;
+        }
+
         let n = stream
             .read(&mut buf)
             .await
@@ -259,7 +276,12 @@ pub async fn download_dir(
     app: Option<&AppHandle>,
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
+    cancel: Option<&TransferCancelRegistry>,
 ) -> IpcResult<()> {
+    if let Some(registry) = cancel {
+        registry.check_not_cancelled(transfer_id)?;
+    }
+
     let remote_path = normalize_remote_path(remote_path);
     let local_base = Path::new(local_dir);
 
@@ -269,6 +291,10 @@ pub async fn download_dir(
     let entries = list_dir(client, &remote_path).await?;
 
     for entry in entries {
+        if let Some(registry) = cancel {
+            registry.check_not_cancelled(transfer_id)?;
+        }
+
         let local_path = local_base.join(&entry.name);
         let local_path_str = local_path.to_string_lossy().into_owned();
         if entry.is_directory {
@@ -279,6 +305,7 @@ pub async fn download_dir(
                 app,
                 connection_id,
                 transfer_id,
+                cancel,
             ))
             .await?;
         } else {
@@ -289,6 +316,7 @@ pub async fn download_dir(
                 app,
                 connection_id,
                 transfer_id,
+                cancel,
             )
             .await?;
         }
@@ -391,9 +419,81 @@ pub async fn fetch_to_cache(
         None,
         None,
         None,
+        None,
     )
     .await?;
     Ok(local_path_str)
+}
+
+async fn list_files_recursive_inner(
+    client: &SharedFtpClient,
+    remote_path: &str,
+    relative_prefix: &str,
+    out: &mut Vec<RecursiveFileEntry>,
+) -> IpcResult<()> {
+    let remote_path = normalize_remote_path(remote_path);
+    let entries = list_dir(client, &remote_path).await?;
+
+    for entry in entries {
+        let relative_path = if relative_prefix.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{relative_prefix}/{}", entry.name)
+        };
+
+        if entry.is_directory {
+            Box::pin(list_files_recursive_inner(
+                client,
+                &entry.path,
+                &relative_path,
+                out,
+            ))
+            .await?;
+        } else {
+            out.push(RecursiveFileEntry {
+                path: entry.path,
+                name: entry.name,
+                relative_path,
+                size: entry.size,
+                modified_at: entry.modified_at,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn list_files_recursive(
+    client: &SharedFtpClient,
+    remote_path: &str,
+) -> IpcResult<Vec<RecursiveFileEntry>> {
+    let remote_path = normalize_remote_path(remote_path);
+
+    let parent_path = if remote_path == "/" {
+        "/".to_string()
+    } else {
+        let parent = Path::new(&remote_path)
+            .parent()
+            .unwrap_or(Path::new("/"));
+        normalize_remote_path(parent.to_string_lossy().as_ref())
+    };
+
+    let parent_entries = list_dir(client, &parent_path).await?;
+    if let Some(entry) = parent_entries.iter().find(|e| e.path == remote_path) {
+        if !entry.is_directory {
+            return Ok(vec![RecursiveFileEntry {
+                path: entry.path.clone(),
+                name: entry.name.clone(),
+                relative_path: entry.name.clone(),
+                size: entry.size,
+                modified_at: entry.modified_at.clone(),
+            }]);
+        }
+    }
+
+    let mut out = Vec::new();
+    list_files_recursive_inner(client, &remote_path, "", &mut out).await?;
+    Ok(out)
 }
 
 pub async fn disconnect_client(client: &SharedFtpClient) {

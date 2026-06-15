@@ -9,7 +9,10 @@ mod utils;
 use std::sync::{Arc, Mutex};
 
 use connection_pool::ConnectionPool;
-use services::{ConfigService, CredentialVaultService, SettingsService};
+use services::{
+    transfer_cancel::TransferCancelRegistry, ConfigService, CredentialVaultService,
+    SettingsService,
+};
 use tauri::Manager;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -55,6 +58,7 @@ pub fn run() {
             app.manage(Arc::new(Mutex::new(settings)));
             app.manage(Arc::new(Mutex::new(vault)));
             app.manage(Arc::new(AsyncMutex::new(ConnectionPool::new())));
+            app.manage(Arc::new(TransferCancelRegistry::default()));
 
             Ok(())
         })
@@ -102,6 +106,8 @@ pub fn run() {
             commands::local_fs::local_home_dir,
             commands::local_fs::local_reveal_in_explorer,
             commands::open::open_in_editor,
+            commands::transfer::transfer_cancel,
+            commands::transfer::transfer_cancel_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

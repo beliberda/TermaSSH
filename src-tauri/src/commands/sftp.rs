@@ -6,8 +6,9 @@ use tauri::State;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::connection_pool::{BrowseContext, ConnectionPool, TransferContext};
-use crate::error::{IpcError, IpcResult};
-use crate::models::sftp::{ListDirResponse, RecursiveFileEntry, SftpEntry};
+use crate::error::IpcResult;
+use crate::models::sftp::{ListDirResponse, RecursiveFileEntry};
+use crate::services::transfer_cancel::TransferCancelRegistry;
 
 type PoolState = Arc<AsyncMutex<ConnectionPool>>;
 
@@ -47,11 +48,15 @@ pub async fn sftp_list_dir(
 pub async fn sftp_upload(
     app: AppHandle,
     pool: State<'_, PoolState>,
+    cancel_registry: State<'_, Arc<TransferCancelRegistry>>,
     connection_id: String,
     local_path: String,
     remote_path: String,
     transfer_id: Option<String>,
 ) -> IpcResult<()> {
+    let cancel: Option<&TransferCancelRegistry> = transfer_id
+        .as_deref()
+        .map(|_| cancel_registry.as_ref());
     let ctx = {
         let pool = pool.lock().await;
         pool.transfer_context(&connection_id)?
@@ -66,6 +71,7 @@ pub async fn sftp_upload(
                 Some(&app),
                 Some(&connection_id),
                 transfer_id.as_deref(),
+                cancel,
             )
             .await
         }
@@ -77,6 +83,7 @@ pub async fn sftp_upload(
                 Some(&app),
                 Some(&connection_id),
                 transfer_id.as_deref(),
+                cancel,
             )
             .await
         }
@@ -87,12 +94,16 @@ pub async fn sftp_upload(
 pub async fn sftp_download(
     app: AppHandle,
     pool: State<'_, PoolState>,
+    cancel_registry: State<'_, Arc<TransferCancelRegistry>>,
     connection_id: String,
     remote_path: String,
     local_path: String,
     is_directory: bool,
     transfer_id: Option<String>,
 ) -> IpcResult<()> {
+    let cancel: Option<&TransferCancelRegistry> = transfer_id
+        .as_deref()
+        .map(|_| cancel_registry.as_ref());
     let ctx = {
         let pool = pool.lock().await;
         pool.transfer_context(&connection_id)?
@@ -113,6 +124,7 @@ pub async fn sftp_download(
                     Some(&app),
                     Some(&connection_id),
                     transfer_id.as_deref(),
+                    cancel,
                 )
                 .await
             } else {
@@ -123,6 +135,7 @@ pub async fn sftp_download(
                     Some(&app),
                     Some(&connection_id),
                     transfer_id.as_deref(),
+                    cancel,
                 )
                 .await
             }
@@ -136,6 +149,7 @@ pub async fn sftp_download(
                     Some(&app),
                     Some(&connection_id),
                     transfer_id.as_deref(),
+                    cancel,
                 )
                 .await
             } else {
@@ -146,6 +160,7 @@ pub async fn sftp_download(
                     Some(&app),
                     Some(&connection_id),
                     transfer_id.as_deref(),
+                    cancel,
                 )
                 .await
             }
@@ -168,7 +183,9 @@ pub async fn sftp_list_recursive(
         BrowseContext::Ssh { ssh_handle, sftp } => {
             crate::services::sftp::list_files_recursive(&ssh_handle, &sftp, &remote_path).await
         }
-        BrowseContext::Ftp { .. } => Err(IpcError::new("sftp.notSupportedForFtp")),
+        BrowseContext::Ftp { client } => {
+            crate::services::ftp::list_files_recursive(&client, &remote_path).await
+        }
     }
 }
 
