@@ -6,31 +6,57 @@ use tauri::AppHandle;
 use tokio::sync::Mutex;
 
 use crate::error::{IpcError, IpcResult};
-use crate::models::sftp::SftpEntry;
+use crate::models::sftp::{RecursiveFileEntry, SftpEntry};
+use crate::services::sftp_transfer_pool::SftpTransferPool;
 use crate::services::ssh::SharedSshHandle;
 use crate::utils::cache_paths::open_cache_path;
 use crate::utils::sftp_paths::normalize_remote_path;
 use crate::utils::transfer::TransferProgress;
 
-pub struct SftpSessionCache(pub Arc<Mutex<Option<SftpSession>>>);
+#[derive(Clone)]
+pub struct SftpSessionCache {
+    session: Arc<Mutex<Option<SftpSession>>>,
+    browse_lock: Arc<Mutex<()>>,
+}
 
 impl SftpSessionCache {
     pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(None)))
+        Self {
+            session: Arc::new(Mutex::new(None)),
+            browse_lock: Arc::new(Mutex::new(())),
+        }
     }
 }
 
 async fn ensure_sftp(ssh_handle: &SharedSshHandle, cache: &SftpSessionCache) -> IpcResult<()> {
-    let mut guard = cache.0.lock().await;
-    if guard.is_some() {
-        return Ok(());
+    {
+        let guard = cache.session.lock().await;
+        if guard.is_some() {
+            return Ok(());
+        }
     }
 
+    let sftp = open_sftp_session(ssh_handle).await?;
+
+    let mut guard = cache.session.lock().await;
+    if guard.is_none() {
+        *guard = Some(sftp);
+    }
+    Ok(())
+}
+
+async fn reset_sftp_session(cache: &SftpSessionCache) {
+    let mut guard = cache.session.lock().await;
+    *guard = None;
+}
+
+pub async fn open_sftp_session(ssh_handle: &SharedSshHandle) -> IpcResult<SftpSession> {
     let channel = {
         let handle = ssh_handle.lock().await;
-        let channel = handle.channel_open_session().await.map_err(|e| {
-            IpcError::with_str_detail("sftp.channelOpenFailed", "raw", e.to_string())
-        })?;
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| IpcError::with_str_detail("sftp.channelOpenFailed", "raw", e.to_string()))?;
 
         channel
             .request_subsystem(true, "sftp")
@@ -40,17 +66,9 @@ async fn ensure_sftp(ssh_handle: &SharedSshHandle, cache: &SftpSessionCache) -> 
         channel
     };
 
-    let sftp = SftpSession::new(channel.into_stream())
+    SftpSession::new(channel.into_stream())
         .await
-        .map_err(|e| IpcError::with_str_detail("sftp.initFailed", "raw", e.to_string()))?;
-
-    *guard = Some(sftp);
-    Ok(())
-}
-
-async fn reset_sftp_session(cache: &SftpSessionCache) {
-    let mut guard = cache.0.lock().await;
-    *guard = None;
+        .map_err(|e| IpcError::with_str_detail("sftp.initFailed", "raw", e.to_string()))
 }
 
 fn mtime_to_iso(mtime: Option<u32>) -> Option<String> {
@@ -65,16 +83,74 @@ pub async fn list_dir(
     ssh_handle: &SharedSshHandle,
     cache: &SftpSessionCache,
     path: &str,
-) -> IpcResult<Vec<SftpEntry>> {
+) -> IpcResult<(Vec<SftpEntry>, String)> {
+    let _browse = cache.browse_lock.lock().await;
+    match list_dir_unlocked(ssh_handle, cache, path).await {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            reset_sftp_session(cache).await;
+            list_dir_unlocked(ssh_handle, cache, path).await.map_err(|retry_err| {
+                IpcError::with_str_detail(
+                    "sftp.listRetryFailed",
+                    "raw",
+                    format!("{err}; retry failed: {retry_err}"),
+                )
+            })
+        }
+    }
+}
+
+async fn resolve_browse_dir(sftp: &SftpSession, path: &str) -> IpcResult<String> {
+    if sftp.try_exists(path).await.unwrap_or(false) {
+        let metadata = sftp
+            .metadata(path)
+            .await
+            .map_err(|e| IpcError::with_str_detail("sftp.statFailed", "raw", e.to_string()))?;
+        if metadata.is_dir() {
+            return Ok(path.to_string());
+        }
+    }
+
+    if path.starts_with('~') || path == "." || !path.starts_with('/') {
+        if let Ok(resolved) = sftp.canonicalize(path).await {
+            return Ok(resolved);
+        }
+    }
+
+    if path.contains('~') {
+        if let Ok(resolved) = sftp.canonicalize("~").await {
+            return Ok(resolved);
+        }
+    }
+
+    if path != "/" {
+        if let Ok(home) = sftp.canonicalize(".").await {
+            return Ok(home);
+        }
+        if sftp.try_exists("/").await.unwrap_or(false) {
+            return Ok("/".to_string());
+        }
+    }
+
+    Ok(path.to_string())
+}
+
+async fn list_dir_unlocked(
+    ssh_handle: &SharedSshHandle,
+    cache: &SftpSessionCache,
+    path: &str,
+) -> IpcResult<(Vec<SftpEntry>, String)> {
     ensure_sftp(ssh_handle, cache).await?;
     let path = normalize_remote_path(path);
-    let guard = cache.0.lock().await;
+    let guard = cache.session.lock().await;
     let sftp = guard
         .as_ref()
         .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
 
+    let browse_path = resolve_browse_dir(sftp, &path).await?;
+
     let read_dir = sftp
-        .read_dir(&path)
+        .read_dir(&browse_path)
         .await
         .map_err(|e| IpcError::with_str_detail("sftp.listFailed", "raw", e.to_string()))?;
 
@@ -97,12 +173,31 @@ pub async fn list_dir(
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
 
-    Ok(entries)
+    Ok((entries, browse_path))
 }
 
-pub async fn upload_file(
-    ssh_handle: &SharedSshHandle,
-    cache: &SftpSessionCache,
+pub async fn upload_file_via_pool(
+    pool: &SftpTransferPool,
+    local_path: &str,
+    remote_path: &str,
+    app: Option<&AppHandle>,
+    connection_id: Option<&str>,
+    transfer_id: Option<&str>,
+) -> IpcResult<()> {
+    let guard = pool.acquire().await?;
+    upload_file_with_session(
+        &guard.session,
+        local_path,
+        remote_path,
+        app,
+        connection_id,
+        transfer_id,
+    )
+    .await
+}
+
+async fn upload_file_with_session(
+    sftp: &SftpSession,
     local_path: &str,
     remote_path: &str,
     app: Option<&AppHandle>,
@@ -164,12 +259,6 @@ pub async fn upload_file(
 
     let remote_path = normalize_remote_path(remote_path);
 
-    ensure_sftp(ssh_handle, cache).await?;
-    let guard = cache.0.lock().await;
-    let sftp = guard
-        .as_ref()
-        .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
-
     let result = sftp
         .write(&remote_path, &data)
         .await
@@ -184,9 +273,53 @@ pub async fn upload_file(
     result
 }
 
+pub async fn download_file_via_pool(
+    pool: &SftpTransferPool,
+    remote_path: &str,
+    local_path: &str,
+    app: Option<&AppHandle>,
+    connection_id: Option<&str>,
+    transfer_id: Option<&str>,
+) -> IpcResult<()> {
+    let guard = pool.acquire().await?;
+    download_file_with_session(
+        &guard.session,
+        remote_path,
+        local_path,
+        app,
+        connection_id,
+        transfer_id,
+    )
+    .await
+}
+
 pub async fn download_file(
     ssh_handle: &SharedSshHandle,
     cache: &SftpSessionCache,
+    remote_path: &str,
+    local_path: &str,
+    app: Option<&AppHandle>,
+    connection_id: Option<&str>,
+    transfer_id: Option<&str>,
+) -> IpcResult<()> {
+    ensure_sftp(ssh_handle, cache).await?;
+    let guard = cache.session.lock().await;
+    let sftp = guard
+        .as_ref()
+        .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
+    download_file_with_session(
+        sftp,
+        remote_path,
+        local_path,
+        app,
+        connection_id,
+        transfer_id,
+    )
+    .await
+}
+
+async fn download_file_with_session(
+    sftp: &SftpSession,
     remote_path: &str,
     local_path: &str,
     app: Option<&AppHandle>,
@@ -199,13 +332,7 @@ pub async fn download_file(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| remote_path.to_string());
 
-    ensure_sftp(ssh_handle, cache).await?;
-
     let file_size = {
-        let guard = cache.0.lock().await;
-        let sftp = guard
-            .as_ref()
-            .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
         let metadata = sftp
             .metadata(&remote_path)
             .await
@@ -220,19 +347,12 @@ pub async fn download_file(
         _ => None,
     };
 
-    let data = {
-        let guard = cache.0.lock().await;
-        let sftp = guard
-            .as_ref()
-            .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
-
-        sftp.read(&remote_path).await.map_err(|e| {
-            if let Some(ref p) = progress {
-                p.error();
-            }
-            IpcError::with_str_detail("sftp.readFailed", "raw", e.to_string())
-        })?
-    };
+    let data = sftp.read(&remote_path).await.map_err(|e| {
+        if let Some(ref p) = progress {
+            p.error();
+        }
+        IpcError::with_str_detail("sftp.readFailed", "raw", e.to_string())
+    })?;
 
     if let Some(ref p) = progress {
         p.update(file_size);
@@ -267,19 +387,41 @@ pub async fn download_dir(
     connection_id: Option<&str>,
     transfer_id: Option<&str>,
 ) -> IpcResult<()> {
+    let _browse = cache.browse_lock.lock().await;
+    download_dir_inner(
+        ssh_handle,
+        cache,
+        remote_path,
+        local_dir,
+        app,
+        connection_id,
+        transfer_id,
+    )
+    .await
+}
+
+async fn download_dir_inner(
+    ssh_handle: &SharedSshHandle,
+    cache: &SftpSessionCache,
+    remote_path: &str,
+    local_dir: &str,
+    app: Option<&AppHandle>,
+    connection_id: Option<&str>,
+    transfer_id: Option<&str>,
+) -> IpcResult<()> {
     let remote_path = normalize_remote_path(remote_path);
     let local_base = Path::new(local_dir);
 
     std::fs::create_dir_all(local_base)
         .map_err(|e| IpcError::with_str_detail("fs.createLocalDirFailed", "raw", e.to_string()))?;
 
-    let entries = list_dir(ssh_handle, cache, &remote_path).await?;
+    let entries = list_dir_unlocked(ssh_handle, cache, &remote_path).await?.0;
 
     for entry in entries {
         let local_path = local_base.join(&entry.name);
         let local_path_str = local_path.to_string_lossy().into_owned();
         if entry.is_directory {
-            Box::pin(download_dir(
+            Box::pin(download_dir_inner(
                 ssh_handle,
                 cache,
                 &entry.path,
@@ -311,10 +453,11 @@ pub async fn mkdir(
     cache: &SftpSessionCache,
     remote_path: &str,
 ) -> IpcResult<()> {
+    let _browse = cache.browse_lock.lock().await;
     let remote_path = normalize_remote_path(remote_path);
 
     ensure_sftp(ssh_handle, cache).await?;
-    let guard = cache.0.lock().await;
+    let guard = cache.session.lock().await;
     let sftp = guard
         .as_ref()
         .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
@@ -330,11 +473,12 @@ pub async fn rename(
     old_path: &str,
     new_path: &str,
 ) -> IpcResult<()> {
+    let _browse = cache.browse_lock.lock().await;
     let old_path = normalize_remote_path(old_path);
     let new_path = normalize_remote_path(new_path);
 
     ensure_sftp(ssh_handle, cache).await?;
-    let guard = cache.0.lock().await;
+    let guard = cache.session.lock().await;
     let sftp = guard
         .as_ref()
         .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
@@ -353,7 +497,7 @@ async fn delete_inner(
     let remote_path = normalize_remote_path(remote_path);
 
     if is_directory {
-        let entries = list_dir(ssh_handle, cache, &remote_path).await?;
+        let entries = list_dir_unlocked(ssh_handle, cache, &remote_path).await?.0;
         for entry in entries {
             Box::pin(delete_inner(
                 ssh_handle,
@@ -365,7 +509,7 @@ async fn delete_inner(
         }
 
         ensure_sftp(ssh_handle, cache).await?;
-        let guard = cache.0.lock().await;
+        let guard = cache.session.lock().await;
         let sftp = guard
             .as_ref()
             .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
@@ -374,7 +518,7 @@ async fn delete_inner(
             .map_err(|e| IpcError::with_str_detail("sftp.removeDirFailed", "raw", e.to_string()))
     } else {
         ensure_sftp(ssh_handle, cache).await?;
-        let guard = cache.0.lock().await;
+        let guard = cache.session.lock().await;
         let sftp = guard
             .as_ref()
             .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
@@ -390,6 +534,7 @@ pub async fn delete(
     remote_path: &str,
     is_directory: bool,
 ) -> IpcResult<()> {
+    let _browse = cache.browse_lock.lock().await;
     delete_inner(ssh_handle, cache, remote_path, is_directory).await
 }
 
@@ -403,7 +548,7 @@ async fn count_files_inner(
     ensure_sftp(ssh_handle, cache).await?;
 
     let is_dir = {
-        let guard = cache.0.lock().await;
+        let guard = cache.session.lock().await;
         let sftp = guard
             .as_ref()
             .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
@@ -420,7 +565,7 @@ async fn count_files_inner(
         return Ok(1);
     }
 
-    let entries = list_dir(ssh_handle, cache, &remote_path).await?;
+    let entries = list_dir_unlocked(ssh_handle, cache, &remote_path).await?.0;
     let mut total_files = 0u64;
 
     for entry in entries {
@@ -439,7 +584,97 @@ pub async fn count_files(
     cache: &SftpSessionCache,
     remote_path: &str,
 ) -> IpcResult<u64> {
+    let _browse = cache.browse_lock.lock().await;
     count_files_inner(ssh_handle, cache, remote_path).await
+}
+
+async fn list_files_recursive_inner(
+    ssh_handle: &SharedSshHandle,
+    cache: &SftpSessionCache,
+    remote_path: &str,
+    relative_prefix: &str,
+    out: &mut Vec<RecursiveFileEntry>,
+) -> IpcResult<()> {
+    let remote_path = normalize_remote_path(remote_path);
+    let entries = list_dir_unlocked(ssh_handle, cache, &remote_path).await?.0;
+
+    for entry in entries {
+        let relative_path = if relative_prefix.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{relative_prefix}/{}", entry.name)
+        };
+
+        if entry.is_directory {
+            Box::pin(list_files_recursive_inner(
+                ssh_handle,
+                cache,
+                &entry.path,
+                &relative_path,
+                out,
+            ))
+            .await?;
+        } else {
+            out.push(RecursiveFileEntry {
+                path: entry.path,
+                name: entry.name,
+                relative_path,
+                size: entry.size,
+                modified_at: entry.modified_at,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn list_files_recursive(
+    ssh_handle: &SharedSshHandle,
+    cache: &SftpSessionCache,
+    remote_path: &str,
+) -> IpcResult<Vec<RecursiveFileEntry>> {
+    let _browse = cache.browse_lock.lock().await;
+    let remote_path = normalize_remote_path(remote_path);
+
+    ensure_sftp(ssh_handle, cache).await?;
+
+    let is_dir = {
+        let guard = cache.session.lock().await;
+        let sftp = guard
+            .as_ref()
+            .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
+        let metadata = sftp
+            .metadata(&remote_path)
+            .await
+            .map_err(|e| IpcError::with_str_detail("sftp.statFailed", "raw", e.to_string()))?;
+        metadata.is_dir()
+    };
+
+    if !is_dir {
+        let guard = cache.session.lock().await;
+        let sftp = guard
+            .as_ref()
+            .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
+        let metadata = sftp
+            .metadata(&remote_path)
+            .await
+            .map_err(|e| IpcError::with_str_detail("sftp.statFailed", "raw", e.to_string()))?;
+        let name = Path::new(&remote_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| remote_path.clone());
+        return Ok(vec![RecursiveFileEntry {
+            path: remote_path.clone(),
+            name: name.clone(),
+            relative_path: name,
+            size: metadata.len(),
+            modified_at: mtime_to_iso(metadata.mtime),
+        }]);
+    }
+
+    let mut out = Vec::new();
+    list_files_recursive_inner(ssh_handle, cache, &remote_path, "", &mut out).await?;
+    Ok(out)
 }
 
 async fn fetch_to_cache_inner(
@@ -455,7 +690,7 @@ async fn fetch_to_cache_inner(
     ensure_sftp(ssh_handle, cache).await?;
 
     {
-        let guard = cache.0.lock().await;
+        let guard = cache.session.lock().await;
         let sftp = guard
             .as_ref()
             .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
@@ -489,6 +724,7 @@ pub async fn fetch_to_cache(
     cache: &SftpSessionCache,
     remote_path: &str,
 ) -> IpcResult<String> {
+    let _browse = cache.browse_lock.lock().await;
     match fetch_to_cache_inner(app, ssh_handle, cache, remote_path).await {
         Ok(path) => Ok(path),
         Err(err) => {

@@ -1,9 +1,8 @@
 import type { DragEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useTranslation } from 'react-i18next';
 import { useStores } from '@stores/index';
-import { getSessionLocalPath } from '@/types/session';
 import { FileTransferToolbar } from '@components/fileTransfer/FileTransferToolbar/FileTransferToolbar';
 import { FilePane } from '@components/fileTransfer/FilePane/FilePane';
 import { PaneResizeHandle } from '@components/fileTransfer/PaneResizeHandle/PaneResizeHandle';
@@ -40,28 +39,10 @@ export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
   const panesRef = useRef<HTMLDivElement>(null);
   const [localPercent, setLocalPercent] = useState(50);
   const [dropTarget, setDropTarget] = useState<'local' | 'remote' | null>(null);
-  const initializedRef = useRef(false);
 
   const session = remoteBrowserStore.sessionId
     ? sessionStore.sessions.find((s) => s.id === remoteBrowserStore.sessionId)
     : null;
-
-  useEffect(() => {
-    if (initializedRef.current) return;
-    if (!remoteBrowserStore.canBrowse && !remoteBrowserStore.connectionId) return;
-    initializedRef.current = true;
-    const localStart = session ? getSessionLocalPath(session) : undefined;
-    void localBrowserStore.init(localStart);
-  }, [
-    localBrowserStore,
-    remoteBrowserStore.canBrowse,
-    remoteBrowserStore.connectionId,
-    session,
-  ]);
-
-  useEffect(() => {
-    initializedRef.current = false;
-  }, [remoteBrowserStore.sessionId]);
 
   const handleDropOnRemote = (e: DragEvent) => {
     e.preventDefault();
@@ -91,7 +72,7 @@ export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
       size: data.sizes[i] ?? 0,
       modifiedAt: data.modifiedAts[i] || undefined,
     }));
-    transferStore.enqueueDownload(
+    void transferStore.enqueueDownload(
       entries,
       localBrowserStore.cwd,
       remoteBrowserStore.connectionId,

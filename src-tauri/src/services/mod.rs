@@ -3,6 +3,7 @@ pub mod credential_vault;
 pub mod ftp;
 pub mod local_fs;
 pub mod sftp;
+pub mod sftp_transfer_pool;
 pub mod ssh;
 pub mod settings;
 

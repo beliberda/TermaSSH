@@ -157,9 +157,19 @@ export function migrateSessionsFile(data: unknown): SessionsFileV2 {
   throw new Error('Invalid sessions file format');
 }
 
+function isWindowsLocalPath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.includes(':\\');
+}
+
 export function getSessionRemotePath(session: SessionConfig): string {
   const raw = (session.remotePath ?? session.defaultPath)?.trim();
   if (!raw) return '/';
+  if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
+    return raw.replace(/\\/g, '/');
+  }
+  if (isWindowsLocalPath(raw)) {
+    return '/';
+  }
   return raw.startsWith('/') ? raw : `/${raw}`;
 }
 

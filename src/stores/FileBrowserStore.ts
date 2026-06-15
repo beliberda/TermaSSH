@@ -10,6 +10,7 @@ import type { TerminalStore } from './TerminalStore';
 import type { SessionStore } from './SessionStore';
 import type { FileConnectionStore } from './FileConnectionStore';
 import type { SettingsStore } from './SettingsStore';
+import type { WorkspaceStore } from './WorkspaceStore';
 
 function joinRemotePath(parent: string, name: string): string {
   const base = parent === '/' ? '' : parent.replace(/\/$/, '');
@@ -46,6 +47,9 @@ export class FileBrowserStore {
   renameDraft = '';
   private connectionStatus: ConnectionStatus | null = null;
   private settingsStore: SettingsStore | null = null;
+  private workspaceStore: WorkspaceStore | null = null;
+  /** Remote browse delegated to FileTransferWorkspace (double panel). */
+  private remoteBrowseSuspended = false;
 
   constructor() {
     makeAutoObservable(this);
@@ -53,6 +57,10 @@ export class FileBrowserStore {
 
   setSettingsStore(settingsStore: SettingsStore) {
     this.settingsStore = settingsStore;
+  }
+
+  setWorkspaceStore(workspaceStore: WorkspaceStore) {
+    this.workspaceStore = workspaceStore;
   }
 
   get breadcrumbs(): { label: string; path: string }[] {
@@ -73,7 +81,12 @@ export class FileBrowserStore {
   }
 
   get canBrowse(): boolean {
-    return this.connectionId !== null && this.connectionStatus === 'connected';
+    return (
+      !this.remoteBrowseSuspended &&
+      this.connectionId !== null &&
+      this.connectionId.length > 0 &&
+      this.connectionStatus === 'connected'
+    );
   }
 
   bind(
@@ -81,8 +94,27 @@ export class FileBrowserStore {
     sessionStore: SessionStore,
     fileConnectionStore: FileConnectionStore,
   ) {
+    const fileTransferMode =
+      this.workspaceStore?.isFileMode(
+        terminalStore,
+        fileConnectionStore,
+        sessionStore,
+      ) ?? false;
+
+    if (fileTransferMode) {
+      this.bindFileTransferPlaceholder(
+        terminalStore,
+        sessionStore,
+        fileConnectionStore,
+      );
+      return;
+    }
+
+    this.remoteBrowseSuspended = false;
+
     const ftpConn = fileConnectionStore.activeConnection;
     if (
+      this.workspaceStore?.active?.kind === 'ftp' &&
       fileConnectionStore.activeSessionId &&
       ftpConn &&
       (ftpConn.status === 'connected' || ftpConn.status === 'connecting')
@@ -145,6 +177,68 @@ export class FileBrowserStore {
     void this.loadDir();
   }
 
+  private bindFileTransferPlaceholder(
+    terminalStore: TerminalStore,
+    sessionStore: SessionStore,
+    fileConnectionStore: FileConnectionStore,
+  ) {
+    this.remoteBrowseSuspended = true;
+
+    if (this.workspaceStore?.active?.kind === 'ftp') {
+      const tab = fileConnectionStore.activeTab;
+      const session = tab
+        ? sessionStore.sessions.find((s) => s.id === tab.sessionId)
+        : null;
+      const rawDefault = session?.defaultPath?.trim();
+      const defaultPath =
+        rawDefault && rawDefault.length > 0
+          ? rawDefault.startsWith('/')
+            ? rawDefault
+            : `/${rawDefault}`
+          : '/';
+
+      runInAction(() => {
+        this.sessionId = tab?.sessionId ?? null;
+        this.protocol = 'ftp';
+        this.connectionStatus = tab?.status ?? null;
+        this.connectionId = tab?.connectionId ?? null;
+        this.cwd = defaultPath;
+        this.entries = [];
+        this.selectedEntry = null;
+        this.error = tab?.error ?? null;
+        this.isLoading = false;
+      });
+      return;
+    }
+
+    const activeTab = terminalStore.activeTab;
+    if (!activeTab) {
+      this.reset();
+      return;
+    }
+
+    const session = sessionStore.sessions.find((s) => s.id === activeTab.sessionId);
+    const rawDefault = session?.defaultPath?.trim();
+    const defaultPath =
+      rawDefault && rawDefault.length > 0
+        ? rawDefault.startsWith('/')
+          ? rawDefault
+          : `/${rawDefault}`
+        : '/';
+
+    runInAction(() => {
+      this.connectionId = activeTab.connectionId ?? null;
+      this.sessionId = activeTab.sessionId;
+      this.connectionStatus = activeTab.status;
+      this.protocol = session?.protocol === 'sftp' ? 'sftp' : 'ssh';
+      this.cwd = defaultPath;
+      this.entries = [];
+      this.selectedEntry = null;
+      this.error = activeTab.error ?? null;
+      this.isLoading = false;
+    });
+  }
+
   private bindFtp(
     sessionId: string,
     ftpConn: NonNullable<FileConnectionStore['activeConnection']>,
@@ -182,6 +276,7 @@ export class FileBrowserStore {
   }
 
   async loadDir(path?: string) {
+    if (this.remoteBrowseSuspended) return;
     if (!this.connectionId) return;
 
     const target = path ?? this.cwd;
@@ -193,9 +288,12 @@ export class FileBrowserStore {
     });
 
     try {
-      const entries = await sftpIpc.sftpListDir(this.connectionId, target);
+      const { entries, resolvedPath } = await sftpIpc.sftpListDir(
+        this.connectionId,
+        target,
+      );
       runInAction(() => {
-        this.cwd = target;
+        this.cwd = resolvedPath;
         this.entries = entries;
         this.isLoading = false;
       });
@@ -502,6 +600,7 @@ export class FileBrowserStore {
   }
 
   reset() {
+    this.remoteBrowseSuspended = false;
     this.connectionId = null;
     this.sessionId = null;
     this.protocol = null;

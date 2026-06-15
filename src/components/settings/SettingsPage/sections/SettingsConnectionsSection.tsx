@@ -1,5 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
+import {
+  MAX_CONCURRENT_TRANSFERS_MAX,
+  MAX_CONCURRENT_TRANSFERS_MIN,
+} from '@/types/settings';
 import type { AppSettings } from '@/types';
 import styles from '../SettingsPage.module.css';
 
@@ -76,6 +80,29 @@ export function SettingsConnectionsSection({ values, onChange }: Props) {
           onChange={(e) =>
             onChange('defaultFtpPort', Number(e.target.value) || 21)
           }
+        />
+      </div>
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="settings-max-transfers">
+          {t('settings.maxConcurrentTransfers')}
+        </label>
+        <input
+          id="settings-max-transfers"
+          type="number"
+          min={MAX_CONCURRENT_TRANSFERS_MIN}
+          max={MAX_CONCURRENT_TRANSFERS_MAX}
+          className={styles.input}
+          value={values.maxConcurrentTransfers}
+          onChange={(e) => {
+            const parsed = Number(e.target.value);
+            const clamped = Number.isFinite(parsed)
+              ? Math.min(
+                  MAX_CONCURRENT_TRANSFERS_MAX,
+                  Math.max(MAX_CONCURRENT_TRANSFERS_MIN, Math.round(parsed)),
+                )
+              : MAX_CONCURRENT_TRANSFERS_MIN;
+            onChange('maxConcurrentTransfers', clamped);
+          }}
         />
       </div>
     </>

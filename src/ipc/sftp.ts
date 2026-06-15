@@ -1,11 +1,11 @@
-import type { SftpEntry } from '@/types';
+import type { ListDirResponse, RecursiveFileEntry } from '@/types';
 import { safeInvoke } from './client';
 
 export async function sftpListDir(
   connectionId: string,
   path: string,
-): Promise<SftpEntry[]> {
-  return safeInvoke<SftpEntry[]>('sftp_list_dir', { connectionId, path });
+): Promise<ListDirResponse> {
+  return safeInvoke<ListDirResponse>('sftp_list_dir', { connectionId, path });
 }
 
 export async function sftpUpload(
@@ -84,6 +84,16 @@ export async function sftpCountFiles(
   remotePath: string,
 ): Promise<CountFilesResponse> {
   return safeInvoke<CountFilesResponse>('sftp_count_files', {
+    connectionId,
+    remotePath,
+  });
+}
+
+export async function sftpListRecursive(
+  connectionId: string,
+  remotePath: string,
+): Promise<RecursiveFileEntry[]> {
+  return safeInvoke<RecursiveFileEntry[]>('sftp_list_recursive', {
     connectionId,
     remotePath,
   });

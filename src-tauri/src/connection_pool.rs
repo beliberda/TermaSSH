@@ -7,10 +7,13 @@ use uuid::Uuid;
 
 use crate::error::{IpcError, IpcResult};
 use crate::events::emit_connection_status;
-use crate::models::sftp::SftpEntry;
+use crate::models::sftp::{RecursiveFileEntry, SftpEntry};
 use crate::models::SessionConfig;
 use crate::services::ftp::{self, SharedFtpClient};
 use crate::services::sftp::SftpSessionCache;
+use crate::services::sftp_transfer_pool::{
+    SftpTransferPool, DEFAULT_MAX_CONCURRENT_TRANSFERS,
+};
 use crate::services::ssh::{run_shell_session, ChannelCommand, SharedSshHandle};
 
 pub enum ConnectionKind {
@@ -18,6 +21,28 @@ pub enum ConnectionKind {
         ssh_handle: SharedSshHandle,
         input_tx: mpsc::UnboundedSender<ChannelCommand>,
         shell_task: tokio::task::JoinHandle<()>,
+        sftp: SftpSessionCache,
+        transfer_pool: SftpTransferPool,
+    },
+    Ftp {
+        client: SharedFtpClient,
+    },
+}
+
+pub enum TransferContext {
+    Ssh {
+        ssh_handle: SharedSshHandle,
+        browse_sftp: SftpSessionCache,
+        transfer_pool: SftpTransferPool,
+    },
+    Ftp {
+        client: SharedFtpClient,
+    },
+}
+
+pub enum BrowseContext {
+    Ssh {
+        ssh_handle: SharedSshHandle,
         sftp: SftpSessionCache,
     },
     Ftp {
@@ -49,6 +74,8 @@ impl ConnectionPool {
         ssh_handle: SharedSshHandle,
     ) {
         let sftp = SftpSessionCache::new();
+        let transfer_pool =
+            SftpTransferPool::new(ssh_handle.clone(), DEFAULT_MAX_CONCURRENT_TRANSFERS);
         let (input_tx, input_rx) = mpsc::unbounded_channel();
 
         let app_clone = app.clone();
@@ -68,6 +95,7 @@ impl ConnectionPool {
                     input_tx,
                     shell_task,
                     sftp,
+                    transfer_pool,
                 },
             },
         );
@@ -162,7 +190,11 @@ impl ConnectionPool {
         match &handle.kind {
             ConnectionKind::Ssh {
                 ssh_handle, sftp, ..
-            } => crate::services::sftp::list_dir(ssh_handle, sftp, path).await,
+            } => {
+                let (entries, _) =
+                    crate::services::sftp::list_dir(ssh_handle, sftp, path).await?;
+                Ok(entries)
+            }
             ConnectionKind::Ftp { client } => ftp::list_dir(client, path).await,
         }
     }
@@ -177,105 +209,63 @@ impl ConnectionPool {
         }
     }
 
-    pub async fn upload_file(
-        &self,
-        app: Option<&AppHandle>,
-        connection_id: &str,
-        local_path: &str,
-        remote_path: &str,
-        transfer_id: Option<&str>,
-    ) -> IpcResult<()> {
+    pub fn transfer_context(&self, connection_id: &str) -> IpcResult<TransferContext> {
         let handle = self.get(connection_id)?;
         match &handle.kind {
             ConnectionKind::Ssh {
-                ssh_handle, sftp, ..
-            } => {
-                crate::services::sftp::upload_file(
-                    ssh_handle,
-                    sftp,
-                    local_path,
-                    remote_path,
-                    app,
-                    Some(connection_id),
-                    transfer_id,
-                )
-                .await
-            }
-            ConnectionKind::Ftp { client } => {
-                ftp::upload_file(
-                    client,
-                    local_path,
-                    remote_path,
-                    app,
-                    Some(connection_id),
-                    transfer_id,
-                )
-                .await
+                ssh_handle,
+                sftp,
+                transfer_pool,
+                ..
+            } => Ok(TransferContext::Ssh {
+                ssh_handle: ssh_handle.clone(),
+                browse_sftp: sftp.clone(),
+                transfer_pool: transfer_pool.clone(),
+            }),
+            ConnectionKind::Ftp { client } => Ok(TransferContext::Ftp {
+                client: client.clone(),
+            }),
+        }
+    }
+
+    pub fn browse_context(&self, connection_id: &str) -> IpcResult<BrowseContext> {
+        let handle = self.get(connection_id)?;
+        match &handle.kind {
+            ConnectionKind::Ssh {
+                ssh_handle,
+                sftp,
+                ..
+            } => Ok(BrowseContext::Ssh {
+                ssh_handle: ssh_handle.clone(),
+                sftp: sftp.clone(),
+            }),
+            ConnectionKind::Ftp { client } => Ok(BrowseContext::Ftp {
+                client: client.clone(),
+            }),
+        }
+    }
+
+    pub fn set_max_concurrent_transfers(&self, max: usize) {
+        for handle in self.connections.values() {
+            if let ConnectionKind::Ssh { transfer_pool, .. } = &handle.kind {
+                transfer_pool.set_max_concurrent(max);
             }
         }
     }
 
-    pub async fn download(
+    pub async fn list_files_recursive(
         &self,
-        app: Option<&AppHandle>,
         connection_id: &str,
         remote_path: &str,
-        local_path: &str,
-        is_directory: bool,
-        transfer_id: Option<&str>,
-    ) -> IpcResult<()> {
+    ) -> IpcResult<Vec<RecursiveFileEntry>> {
         let handle = self.get(connection_id)?;
         match &handle.kind {
             ConnectionKind::Ssh {
                 ssh_handle, sftp, ..
             } => {
-                if is_directory {
-                    crate::services::sftp::download_dir(
-                        ssh_handle,
-                        sftp,
-                        remote_path,
-                        local_path,
-                        app,
-                        Some(connection_id),
-                        transfer_id,
-                    )
-                    .await
-                } else {
-                    crate::services::sftp::download_file(
-                        ssh_handle,
-                        sftp,
-                        remote_path,
-                        local_path,
-                        app,
-                        Some(connection_id),
-                        transfer_id,
-                    )
-                    .await
-                }
+                crate::services::sftp::list_files_recursive(ssh_handle, sftp, remote_path).await
             }
-            ConnectionKind::Ftp { client } => {
-                if is_directory {
-                    ftp::download_dir(
-                        client,
-                        remote_path,
-                        local_path,
-                        app,
-                        Some(connection_id),
-                        transfer_id,
-                    )
-                    .await
-                } else {
-                    ftp::download_file(
-                        client,
-                        remote_path,
-                        local_path,
-                        app,
-                        Some(connection_id),
-                        transfer_id,
-                    )
-                    .await
-                }
-            }
+            ConnectionKind::Ftp { .. } => Err(IpcError::new("sftp.notSupportedForFtp")),
         }
     }
 

@@ -78,14 +78,14 @@ export class LocalBrowserStore {
 
   async init(startPath?: string) {
     if (startPath?.trim()) {
-      await this.loadDir(startPath.trim());
+      await this.loadDir(startPath.trim(), { skipRemoteSync: true });
       return;
     }
     const home = await localIpc.localHomeDir();
-    await this.loadDir(home ?? "C:\\");
+    await this.loadDir(home ?? "C:\\", { skipRemoteSync: true });
   }
 
-  async loadDir(path?: string) {
+  async loadDir(path?: string, opts?: { skipRemoteSync?: boolean }) {
     const target = path ?? this.cwd;
     if (!target) return;
     this.cancelRename();
@@ -104,7 +104,7 @@ export class LocalBrowserStore {
         this.selectedPaths.clear();
         this.lastSelectedPath = null;
       });
-      if (!isSyncBrowseGuarded()) {
+      if (!opts?.skipRemoteSync && !isSyncBrowseGuarded()) {
         this.syncRemoteBrowse(target);
       }
     } catch (e) {
@@ -128,7 +128,7 @@ export class LocalBrowserStore {
     if (!mapped) return;
     if (pathsEqual(remote.cwd, mapped)) return;
 
-    await remote.loadDir(mapped);
+    await remote.loadDir(mapped, { soft: true, sync: false });
   }
 
   navigateTo(path: string) {

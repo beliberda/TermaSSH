@@ -38,6 +38,7 @@ export class RootStore {
 
     this.settingsStore.setAppStore(this.appStore);
     this.fileBrowserStore.setSettingsStore(this.settingsStore);
+    this.fileBrowserStore.setWorkspaceStore(this.workspaceStore);
     this.localBrowserStore.setSettingsStore(this.settingsStore);
     this.remoteBrowserStore.setSettingsStore(this.settingsStore);
     this.remoteBrowserStore.setLocalBrowserStore(this.localBrowserStore);

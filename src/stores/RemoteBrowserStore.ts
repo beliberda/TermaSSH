@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from "mobx";
 import type { ConnectionStatus, SessionConfig, SftpEntry } from "@/types";
-import { getSessionRemotePath } from "@/types/session";
+import { getSessionLocalPath, getSessionRemotePath } from "@/types/session";
 import type { AppError } from "@i18n/types";
 import { i18n } from "@i18n/index";
 import { getIpcErrorPayload } from "@ipc/client";
@@ -48,6 +48,8 @@ export class RemoteBrowserStore {
   focused = false;
   private settingsStore: SettingsStore | null = null;
   private localBrowserStore: LocalBrowserStore | null = null;
+  private loadDirGeneration = 0;
+  private localPaneInitialized = false;
 
   constructor() {
     makeAutoObservable(this);
@@ -78,7 +80,11 @@ export class RemoteBrowserStore {
   }
 
   get canBrowse(): boolean {
-    return this.connectionId !== null && this.connectionStatus === "connected";
+    return (
+      this.connectionId !== null &&
+      this.connectionId.length > 0 &&
+      this.connectionStatus === "connected"
+    );
   }
 
   get selectedEntries(): SftpEntry[] {
@@ -102,11 +108,16 @@ export class RemoteBrowserStore {
         this.selectedPaths.clear();
         this.lastSelectedPath = null;
         this.error = null;
+        this.localPaneInitialized = false;
       }
     });
 
     if (this.canBrowse) {
       void this.loadDir();
+    } else {
+      runInAction(() => {
+        this.isLoading = false;
+      });
     }
   }
 
@@ -122,37 +133,81 @@ export class RemoteBrowserStore {
     this.error = null;
     this.selectedPaths.clear();
     this.lastSelectedPath = null;
+    this.localPaneInitialized = false;
     this.cancelRename();
   }
 
-  async loadDir(path?: string) {
-    if (!this.connectionId) return;
+  async loadDir(
+    path?: string,
+    opts?: { sync?: boolean; soft?: boolean },
+  ) {
+    if (!this.connectionId || this.connectionStatus !== "connected") return;
+
+    const generation = ++this.loadDirGeneration;
+    const connectionId = this.connectionId;
     const target = path ?? this.cwd;
+    const shouldSync = opts?.sync !== false && !isSyncBrowseGuarded();
     this.cancelRename();
 
     runInAction(() => {
       this.isLoading = true;
-      this.error = null;
+      if (!opts?.soft) {
+        this.error = null;
+      }
     });
 
     try {
-      const entries = await sftpIpc.sftpListDir(this.connectionId, target);
+      const { entries, resolvedPath } = await sftpIpc.sftpListDir(
+        connectionId,
+        target,
+      );
+      if (
+        generation !== this.loadDirGeneration ||
+        connectionId !== this.connectionId
+      ) {
+        return;
+      }
       runInAction(() => {
-        this.cwd = target;
+        this.cwd = resolvedPath;
         this.entries = entries;
         this.isLoading = false;
+        this.error = null;
         this.selectedPaths.clear();
         this.lastSelectedPath = null;
       });
-      if (!isSyncBrowseGuarded()) {
-        this.syncLocalBrowse(target);
+      await this.ensureLocalPaneLoaded();
+      if (shouldSync) {
+        this.syncLocalBrowse(resolvedPath);
       }
     } catch (e) {
+      if (
+        generation !== this.loadDirGeneration ||
+        connectionId !== this.connectionId
+      ) {
+        return;
+      }
+      if (opts?.soft) {
+        runInAction(() => {
+          this.isLoading = false;
+        });
+        return;
+      }
       runInAction(() => {
         this.error = mapFileError(e, "files.listFailed");
         this.isLoading = false;
       });
     }
+  }
+
+  private async ensureLocalPaneLoaded(): Promise<void> {
+    if (this.localPaneInitialized || !this.localBrowserStore) return;
+    if (this.session && isSyncBrowseEnabled(this.session)) return;
+
+    this.localPaneInitialized = true;
+    const localStart = this.session
+      ? getSessionLocalPath(this.session)
+      : undefined;
+    await this.localBrowserStore.init(localStart);
   }
 
   syncLocalBrowse(remotePath: string) {
@@ -169,7 +224,7 @@ export class RemoteBrowserStore {
 
     const exists = await localIpc.localExists(mapped);
     if (exists) {
-      await this.localBrowserStore.loadDir(mapped);
+      await this.localBrowserStore.loadDir(mapped, { skipRemoteSync: true });
     }
   }
 

@@ -5,6 +5,7 @@ import type {
   TransferProgressPayload,
   TransferTask,
 } from '@/types/transfer';
+import { MAX_CONCURRENT_TRANSFERS_DEFAULT } from '@/types/settings';
 import * as localIpc from '@ipc/local';
 import * as sftpIpc from '@ipc/sftp';
 import { listenTransferProgress } from '@ipc/events';
@@ -13,6 +14,16 @@ import type { LocalBrowserStore } from './LocalBrowserStore';
 import type { RemoteBrowserStore } from './RemoteBrowserStore';
 import type { SessionStore } from './SessionStore';
 import type { SettingsStore } from './SettingsStore';
+
+function joinLocalRelative(base: string, relativePath: string): string {
+  const sep = base.includes('\\') ? '\\' : '/';
+  const parts = relativePath.split('/').filter(Boolean);
+  let result = base.replace(/[/\\]+$/, '');
+  for (const part of parts) {
+    result = `${result}${sep}${part}`;
+  }
+  return result;
+}
 
 export class TransferStore {
   tasks: TransferTask[] = [];
@@ -27,6 +38,8 @@ export class TransferStore {
   private remoteBrowserStore: RemoteBrowserStore | null = null;
   private sessionStore: SessionStore | null = null;
   private settingsStore: SettingsStore | null = null;
+  private activeWorkers = 0;
+  private conflictSession: SessionConfig | null = null;
 
   constructor() {
     makeAutoObservable(this);
@@ -59,8 +72,19 @@ export class TransferStore {
     ).length;
   }
 
+  get runningCount(): number {
+    return this.tasks.filter((t) => t.status === 'running').length;
+  }
+
   get hasActiveTransfers(): boolean {
     return this.activeCount > 0;
+  }
+
+  private get maxConcurrent(): number {
+    return (
+      this.settingsStore?.settings.maxConcurrentTransfers ??
+      MAX_CONCURRENT_TRANSFERS_DEFAULT
+    );
   }
 
   setQueueExpanded(value: boolean) {
@@ -116,28 +140,74 @@ export class TransferStore {
     void this.processQueue();
   }
 
-  enqueueDownload(
-    entries: { path: string; name: string; isDirectory: boolean; size: number; modifiedAt?: string }[],
+  async enqueueDownload(
+    entries: {
+      path: string;
+      name: string;
+      isDirectory: boolean;
+      size: number;
+      modifiedAt?: string;
+    }[],
     localDir: string,
     connectionId: string,
     session?: SessionConfig | null,
   ) {
+    const newTasks: TransferTask[] = [];
+
     for (const entry of entries) {
-      const task: TransferTask = {
-        id: crypto.randomUUID(),
-        connectionId,
-        fileName: entry.name,
-        direction: 'download',
-        localPath: joinLocalPath(localDir, entry.name),
-        remotePath: entry.path,
-        isDirectory: entry.isDirectory,
-        status: 'queued',
-        bytesDone: 0,
-        bytesTotal: entry.size,
-      };
-      this.tasks.push(task);
+      if (entry.isDirectory) {
+        try {
+          const files = await sftpIpc.sftpListRecursive(connectionId, entry.path);
+          const dirBase = joinLocalPath(localDir, entry.name);
+          for (const file of files) {
+            newTasks.push({
+              id: crypto.randomUUID(),
+              connectionId,
+              fileName: file.relativePath,
+              direction: 'download',
+              localPath: joinLocalRelative(dirBase, file.relativePath),
+              remotePath: file.path,
+              isDirectory: false,
+              status: 'queued',
+              bytesDone: 0,
+              bytesTotal: file.size,
+            });
+          }
+        } catch (e) {
+          newTasks.push({
+            id: crypto.randomUUID(),
+            connectionId,
+            fileName: entry.name,
+            direction: 'download',
+            localPath: joinLocalPath(localDir, entry.name),
+            remotePath: entry.path,
+            isDirectory: true,
+            status: 'error',
+            bytesDone: 0,
+            bytesTotal: entry.size,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      } else {
+        newTasks.push({
+          id: crypto.randomUUID(),
+          connectionId,
+          fileName: entry.name,
+          direction: 'download',
+          localPath: joinLocalPath(localDir, entry.name),
+          remotePath: entry.path,
+          isDirectory: false,
+          status: 'queued',
+          bytesDone: 0,
+          bytesTotal: entry.size,
+        });
+      }
     }
-    void this.processQueueWithConflicts(session ?? null);
+
+    runInAction(() => {
+      this.tasks.push(...newTasks);
+    });
+    void this.processQueue(session ?? null);
   }
 
   uploadSelected() {
@@ -159,7 +229,7 @@ export class TransferStore {
     if (!remote?.connectionId || !local?.cwd) return;
     const selected = remote.selectedEntries;
     if (selected.length === 0) return;
-    this.enqueueDownload(
+    void this.enqueueDownload(
       selected.map((e) => ({
         path: e.path,
         name: e.name,
@@ -175,7 +245,10 @@ export class TransferStore {
 
   clearCompleted() {
     this.tasks = this.tasks.filter(
-      (t) => t.status !== 'done' && t.status !== 'skipped' && t.status !== 'cancelled',
+      (t) =>
+        t.status !== 'done' &&
+        t.status !== 'skipped' &&
+        t.status !== 'cancelled',
     );
   }
 
@@ -191,46 +264,81 @@ export class TransferStore {
     });
   }
 
-  private async processQueue() {
-    if (this.processing) return;
+  private async processQueue(session: SessionConfig | null = null) {
+    if (this.processing) {
+      if (session) this.conflictSession = session;
+      return;
+    }
     this.processing = true;
+    if (session) this.conflictSession = session;
+
     try {
-      let task = this.tasks.find((t) => t.status === 'queued');
-      while (task) {
-        await this.runTask(task);
-        task = this.tasks.find((t) => t.status === 'queued');
-      }
+      await this.resolveDownloadConflicts();
+      await this.runWorkers();
     } finally {
-      this.processing = false;
+      runInAction(() => {
+        this.processing = false;
+        this.conflictSession = null;
+      });
       this.remoteBrowserStore?.refresh();
       this.localBrowserStore?.refresh();
+
+      if (this.tasks.some((t) => t.status === 'queued')) {
+        void this.processQueue();
+      }
     }
   }
 
-  private async processQueueWithConflicts(session: SessionConfig | null) {
-    if (this.processing) return;
-    this.processing = true;
-    try {
-      let task = this.tasks.find((t) => t.status === 'queued');
-      while (task) {
-        if (task.direction === 'download' && !task.isDirectory) {
-          const action = await this.checkConflict(task, session);
-          if (action === 'skip') {
-            runInAction(() => {
-              task!.status = 'skipped';
-            });
-            task = this.tasks.find((t) => t.status === 'queued');
-            continue;
-          }
-        }
-        await this.runTask(task);
-        task = this.tasks.find((t) => t.status === 'queued');
+  private async resolveDownloadConflicts() {
+    const session = this.conflictSession;
+    let task = this.tasks.find(
+      (t) =>
+        t.status === 'queued' &&
+        t.direction === 'download' &&
+        !t.isDirectory,
+    );
+
+    while (task) {
+      const action = await this.checkConflict(task, session);
+      if (action === 'skip') {
+        runInAction(() => {
+          task!.status = 'skipped';
+        });
       }
-    } finally {
-      this.processing = false;
-      this.remoteBrowserStore?.refresh();
-      this.localBrowserStore?.refresh();
+      task = this.tasks.find(
+        (t) =>
+          t.status === 'queued' &&
+          t.direction === 'download' &&
+          !t.isDirectory,
+      );
     }
+  }
+
+  private async runWorkers(): Promise<void> {
+    const pump = async (): Promise<void> => {
+      const started: Promise<void>[] = [];
+
+      while (this.activeWorkers < this.maxConcurrent) {
+        const task = this.tasks.find((t) => t.status === 'queued');
+        if (!task) break;
+
+        this.activeWorkers++;
+        const worker = this.runTask(task).finally(() => {
+          this.activeWorkers--;
+        });
+        started.push(worker);
+      }
+
+      if (started.length === 0) return;
+
+      await Promise.all(started);
+
+      if (this.tasks.some((t) => t.status === 'queued')) {
+        await pump();
+      }
+    };
+
+    await pump();
   }
 
   private getEffectivePolicy(session: SessionConfig | null): FileConflictPolicy {

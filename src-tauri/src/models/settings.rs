@@ -19,6 +19,8 @@ pub struct AppSettings {
     pub locale: String,
     #[serde(default = "default_file_conflict_policy")]
     pub default_file_conflict_policy: String,
+    #[serde(default = "default_max_concurrent_transfers")]
+    pub max_concurrent_transfers: u16,
     #[serde(default = "default_shortcuts")]
     pub shortcuts: HashMap<String, String>,
 }
@@ -44,6 +46,10 @@ fn default_file_conflict_policy() -> String {
     "ask".to_string()
 }
 
+fn default_max_concurrent_transfers() -> u16 {
+    3
+}
+
 fn default_sidebar_width() -> u16 {
     240
 }
@@ -65,6 +71,7 @@ impl Default for AppSettings {
             sidebar_width: default_sidebar_width(),
             locale: default_locale(),
             default_file_conflict_policy: default_file_conflict_policy(),
+            max_concurrent_transfers: default_max_concurrent_transfers(),
             shortcuts: default_shortcuts(),
         }
     }

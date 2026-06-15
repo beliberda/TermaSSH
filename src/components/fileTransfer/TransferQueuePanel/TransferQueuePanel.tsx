@@ -30,6 +30,10 @@ export const TransferQueuePanel = observer(function TransferQueuePanel() {
             active: transferStore.activeCount,
             total: transferStore.tasks.length,
           })}
+          {transferStore.runningCount > 1 &&
+            ` (${t('fileTransfer.transfers.running', {
+              count: transferStore.runningCount,
+            })})`}
         </span>
         <span className={styles.toggle}>
           {transferStore.queueExpanded ? '▼' : '▲'}

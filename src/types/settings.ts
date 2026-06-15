@@ -6,6 +6,9 @@ import { defaultShortcuts, shortcutsConfigSchema } from './shortcuts';
 export const SIDEBAR_WIDTH_MIN = 180;
 export const SIDEBAR_WIDTH_MAX = 520;
 export const SIDEBAR_WIDTH_DEFAULT = 240;
+export const MAX_CONCURRENT_TRANSFERS_MIN = 1;
+export const MAX_CONCURRENT_TRANSFERS_MAX = 8;
+export const MAX_CONCURRENT_TRANSFERS_DEFAULT = 3;
 
 export const appSettingsSchema = z.object({
   schemaVersion: z.literal(1),
@@ -23,6 +26,12 @@ export const appSettingsSchema = z.object({
     .default(SIDEBAR_WIDTH_DEFAULT),
   locale: z.enum(LOCALE_CODES).default('ru'),
   defaultFileConflictPolicy: fileConflictPolicySchema.default('ask'),
+  maxConcurrentTransfers: z
+    .number()
+    .int()
+    .min(MAX_CONCURRENT_TRANSFERS_MIN)
+    .max(MAX_CONCURRENT_TRANSFERS_MAX)
+    .default(MAX_CONCURRENT_TRANSFERS_DEFAULT),
   shortcuts: shortcutsConfigSchema.default(defaultShortcuts),
 });
 
@@ -39,5 +48,6 @@ export const defaultAppSettings: AppSettings = {
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   locale: 'ru',
   defaultFileConflictPolicy: 'ask',
+  maxConcurrentTransfers: MAX_CONCURRENT_TRANSFERS_DEFAULT,
   shortcuts: { ...defaultShortcuts },
 };

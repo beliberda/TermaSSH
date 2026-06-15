@@ -33,7 +33,7 @@ export async function safeInvoke<T>(
     return await invoke<T>(command, args);
   } catch (error) {
     const payload = getIpcErrorPayload(error);
-    console.error(`[IPC] ${command} failed:`, payload);
+    console.error(`[IPC] ${command} failed:`, payload, error);
     throw new IpcInvokeError(payload);
   }
 }

@@ -139,7 +139,8 @@
     "editorPath": "Default editor (optional)",
     "editorPlaceholder": "Empty — system default application",
     "sshPort": "Default SSH port",
-    "ftpPort": "Default FTP port"
+    "ftpPort": "Default FTP port",
+    "maxConcurrentTransfers": "Parallel file transfers"
   },
   "terminal": {
     "status": {
@@ -247,6 +248,7 @@
     },
     "transfers": {
       "title": "Transfers: {{active}} / {{total}}",
+      "running": "{{count}} active",
       "active": "Transferring",
       "clearCompleted": "Clear completed",
       "status": {

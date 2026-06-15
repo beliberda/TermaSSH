@@ -139,7 +139,8 @@
     "editorPath": "Редактор по умолчанию (опционально)",
     "editorPlaceholder": "Пусто — системное приложение по умолчанию",
     "sshPort": "Порт SSH по умолчанию",
-    "ftpPort": "Порт FTP по умолчанию"
+    "ftpPort": "Порт FTP по умолчанию",
+    "maxConcurrentTransfers": "Параллельных передач файлов"
   },
   "terminal": {
     "status": {
@@ -247,6 +248,7 @@
     },
     "transfers": {
       "title": "Передачи: {{active}} / {{total}}",
+      "running": "{{count}} активных",
       "active": "Передаётся",
       "clearCompleted": "Очистить завершённые",
       "status": {

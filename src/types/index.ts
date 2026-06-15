@@ -52,7 +52,7 @@ export type {
 
 export { sftpEntrySchema } from './sftp';
 
-export type { SftpEntry } from './sftp';
+export type { ListDirResponse, RecursiveFileEntry, SftpEntry } from './sftp';
 
 export { appSettingsSchema, defaultAppSettings } from './settings';
 
