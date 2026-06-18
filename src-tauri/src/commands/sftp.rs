@@ -45,6 +45,27 @@ pub async fn sftp_list_dir(
 }
 
 #[tauri::command]
+pub async fn sftp_exists(
+    pool: State<'_, PoolState>,
+    connection_id: String,
+    path: String,
+) -> IpcResult<bool> {
+    let ctx = {
+        let pool = pool.lock().await;
+        pool.browse_context(&connection_id)?
+    };
+
+    match ctx {
+        BrowseContext::Ssh { ssh_handle, sftp } => {
+            crate::services::sftp::path_exists(&ssh_handle, &sftp, &path).await
+        }
+        BrowseContext::Ftp { client } => {
+            crate::services::ftp::path_exists(&client, &path).await
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn sftp_upload(
     app: AppHandle,
     pool: State<'_, PoolState>,

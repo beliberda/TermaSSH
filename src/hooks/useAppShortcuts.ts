@@ -117,6 +117,23 @@ export function useAppShortcuts() {
       }
 
       if (matchesShortcut(e, shortcuts.reconnectTab)) {
+        if (fileMode) {
+          if (workspaceStore.active?.kind === 'ftp') {
+            const ftpTab = fileConnectionStore.activeTab;
+            if (ftpTab && fileConnectionStore.canReconnect(ftpTab)) {
+              e.preventDefault();
+              void fileConnectionStore.reconnectTab(ftpTab.id);
+              return;
+            }
+          } else {
+            const tab = terminalStore.activeTab;
+            if (tab && terminalStore.canReconnect(tab)) {
+              e.preventDefault();
+              void terminalStore.reconnectTab(tab.id);
+              return;
+            }
+          }
+        }
         const tab = terminalStore.activeTab;
         if (tab && terminalStore.canReconnect(tab)) {
           e.preventDefault();

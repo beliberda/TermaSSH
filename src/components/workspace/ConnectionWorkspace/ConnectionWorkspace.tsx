@@ -49,8 +49,17 @@ export const ConnectionWorkspace = observer(function ConnectionWorkspace() {
 
   const activeTerminalTab = terminalStore.activeTab;
   const activeFtpTab = fileConnectionStore.activeTab;
+  const inFileMode = workspaceStore.isFileMode(
+    terminalStore,
+    fileConnectionStore,
+    sessionStore,
+  );
 
-  const bannerTab = showTerminal ? activeTerminalTab : activeFtpTab;
+  const bannerTab = showTerminal
+    ? activeTerminalTab
+    : inFileMode && activeTerminalTab
+      ? activeTerminalTab
+      : activeFtpTab;
 
   const translateTabError = (error: AppError) => {
     const key = `errors.${error.code}`;
@@ -69,10 +78,26 @@ export const ConnectionWorkspace = observer(function ConnectionWorkspace() {
       )
     : null;
 
-  const showReconnect =
-    showTerminal &&
+  const canReconnectTerminal =
     activeTerminalTab !== null &&
     terminalStore.canReconnect(activeTerminalTab);
+  const canReconnectFtp =
+    activeFtpTab !== null && fileConnectionStore.canReconnect(activeFtpTab);
+
+  const showReconnect =
+    (showTerminal && canReconnectTerminal) ||
+    (inFileMode && !showTerminal && canReconnectTerminal) ||
+    (inFileMode && canReconnectFtp);
+
+  const handleReconnect = () => {
+    if (inFileMode && canReconnectFtp && activeFtpTab) {
+      void fileConnectionStore.reconnectTab(activeFtpTab.id);
+      return;
+    }
+    if (canReconnectTerminal && activeTerminalTab) {
+      void terminalStore.reconnectTab(activeTerminalTab.id);
+    }
+  };
 
   const hasAnyTab =
     terminalStore.tabs.length > 0 || fileConnectionStore.tabs.length > 0;
@@ -86,13 +111,11 @@ export const ConnectionWorkspace = observer(function ConnectionWorkspace() {
             className={`${styles.banner} ${bannerTab.status === 'error' ? styles.bannerError : styles.bannerInfo}`}
           >
             <span className={styles.bannerMessage}>{bannerMessage}</span>
-            {showReconnect && activeTerminalTab && (
+            {showReconnect && (
               <button
                 type="button"
                 className={styles.bannerReconnect}
-                onClick={() =>
-                  void terminalStore.reconnectTab(activeTerminalTab.id)
-                }
+                onClick={handleReconnect}
               >
                 {t('terminal.workspace.reconnect')}
               </button>

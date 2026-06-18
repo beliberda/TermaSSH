@@ -25,20 +25,35 @@ export function parentRemotePath(path: string): string {
   return parts.length === 0 ? '/' : `/${parts.join('/')}`;
 }
 
+export function normalizeRemotePath(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized === '' ? '/' : normalized;
+}
+
+export function remotePathsEquivalent(a: string, b: string): boolean {
+  return normalizeRemotePath(a) === normalizeRemotePath(b);
+}
+
 export function parentLocalPath(path: string): string {
   const separator = path.includes('\\') ? '\\' : '/';
+
+  if (separator === '\\' && /^[A-Za-z]:/.test(path)) {
+    const drive = path.slice(0, 2);
+    const rest = path.slice(2).replace(/^[/\\]+/, '');
+    const parts = rest.split(/[/\\]/).filter(Boolean);
+    parts.pop();
+    if (parts.length === 0) {
+      return `${drive}${separator}`;
+    }
+    return `${drive}${separator}${parts.join(separator)}`;
+  }
+
   const parts = path.split(/[/\\]/).filter(Boolean);
   parts.pop();
   if (parts.length === 0) {
-    return separator === '\\' && /^[A-Za-z]:/.test(path)
-      ? `${path.slice(0, 2)}${separator}`
-      : separator;
+    return separator;
   }
-  const joined = parts.join(separator);
-  if (separator === '\\' && /^[A-Za-z]:/.test(path)) {
-    return `${path.slice(0, 2)}${separator}${joined}`;
-  }
-  return `${separator}${joined}`;
+  return `${separator}${parts.join(separator)}`;
 }
 
 export function remoteRelativePath(

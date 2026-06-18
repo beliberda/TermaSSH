@@ -46,3 +46,17 @@ export async function localHomeDir(): Promise<string | null> {
 export async function localRevealInExplorer(path: string): Promise<void> {
   await safeInvoke("local_reveal_in_explorer", { path });
 }
+
+export interface RecursiveLocalFile {
+  path: string;
+  name: string;
+  relativePath: string;
+  size: number;
+  modifiedAt?: string;
+}
+
+export async function localListRecursive(
+  path: string,
+): Promise<RecursiveLocalFile[]> {
+  return safeInvoke<RecursiveLocalFile[]>("local_list_recursive", { path });
+}

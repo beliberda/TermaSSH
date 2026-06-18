@@ -3,6 +3,7 @@ import { useState } from "react";
 import { observer } from "mobx-react-lite";
 import { useTranslation } from "react-i18next";
 import type { SftpEntry } from "@/types";
+import { useAppErrorMessage } from "@i18n/useAppErrorMessage";
 import type { LocalBrowserStore } from "@stores/LocalBrowserStore";
 import type { RemoteBrowserStore } from "@stores/RemoteBrowserStore";
 import { FileBreadcrumbs } from "@components/fileTransfer/FileBreadcrumbs/FileBreadcrumbs";
@@ -19,9 +20,18 @@ interface FilePaneProps {
   onFocus: () => void;
   onDrop: (e: DragEvent) => void;
   onDragOver: (e: DragEvent) => void;
+  onDragLeave?: (e: DragEvent) => void;
+  onDragStart?: (side: "local" | "remote") => void;
+  onDragEnd?: () => void;
   onUpload?: () => void;
   onDownload?: () => void;
   onOpen?: (entry: SftpEntry) => void;
+  disconnected?: boolean;
+  disconnectedMessage?: string;
+  connecting?: boolean;
+  connectingMessage?: string;
+  showReconnect?: boolean;
+  onReconnect?: () => void;
 }
 
 export const FilePane = observer(function FilePane({
@@ -31,11 +41,21 @@ export const FilePane = observer(function FilePane({
   onFocus,
   onDrop,
   onDragOver,
+  onDragLeave,
+  onDragStart,
+  onDragEnd,
   onUpload,
   onDownload,
   onOpen,
+  disconnected = false,
+  disconnectedMessage,
+  connecting = false,
+  connectingMessage,
+  showReconnect = false,
+  onReconnect,
 }: FilePaneProps) {
   const { t } = useTranslation();
+  const errorMessage = useAppErrorMessage(store.error);
   const [contextMenu, setContextMenu] = useState<{
     entry: SftpEntry | null;
     x: number;
@@ -69,7 +89,14 @@ export const FilePane = observer(function FilePane({
         modifiedAts: entries.map((item) => item.modifiedAt ?? ""),
       }),
     );
+    e.dataTransfer.setData("text/plain", side);
     e.dataTransfer.effectAllowed = "copy";
+    e.stopPropagation();
+    onDragStart?.(side);
+  };
+
+  const handleDragEnd = () => {
+    onDragEnd?.();
   };
 
   const openInEditor = (entry: SftpEntry) => {
@@ -92,41 +119,84 @@ export const FilePane = observer(function FilePane({
     openInEditor(entry);
   };
 
+  const showOverlay = disconnected || connecting;
+  const overlayMessage = connecting
+    ? connectingMessage
+    : disconnectedMessage;
+
   return (
     <div className={styles.pane}>
-      <div className={styles.paneTitle}>{paneLabel}</div>
-      <FileBreadcrumbs
-        crumbs={store.breadcrumbs}
-        currentPath={store.cwd}
-        onNavigate={(path) => store.navigateTo(path)}
-        onCopyPath={(path) => void store.copyPath(path)}
-      />
-      <FileTable
-        entries={store.entries}
-        cwd={store.cwd}
-        selectedPaths={store.selectedPaths}
-        renameTargetPath={store.renameTargetPath}
-        renameDraft={store.renameDraft}
-        isLoading={store.isLoading}
-        focused={store.focused}
-        paneLabel={paneLabel}
-        onSelect={(entry, opts) => store.selectEntry(entry, opts)}
-        onSelectPaths={(paths, mode) => store.selectPaths(paths, mode)}
-        onClearSelection={() => store.clearSelection()}
-        onNavigateUp={() => store.navigateUp()}
-        onOpen={handleOpen}
-        onContextMenu={handleContextMenu}
-        onRenameDraftChange={(v) => {
-          store.renameDraft = v;
-        }}
-        onCommitRename={() => void store.commitRename()}
-        onCancelRename={() => store.cancelRename()}
-        onFocus={onFocus}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragStart={handleDragStart}
-        dropActive={dropActive}
-      />
+      <div className={styles.paneBody}>
+        <div className={styles.paneTitle}>{paneLabel}</div>
+        <FileBreadcrumbs
+          crumbs={store.breadcrumbs}
+          currentPath={store.cwd}
+          onNavigate={(path) => store.navigateTo(path)}
+          onCopyPath={(path) => void store.copyPath(path)}
+        />
+        {errorMessage && (
+          <div className={styles.errorBanner} role="alert">
+            <span className={styles.errorText}>{errorMessage}</span>
+            <button
+              type="button"
+              className={styles.errorDismiss}
+              onClick={() => {
+                store.error = null;
+              }}
+              aria-label={t("common.close")}
+            >
+              ×
+            </button>
+          </div>
+        )}
+        <FileTable
+          entries={store.entries}
+          cwd={store.cwd}
+          selectedPaths={store.selectedPaths}
+          renameTargetPath={store.renameTargetPath}
+          renameDraft={store.renameDraft}
+          isLoading={store.isLoading}
+          focused={store.focused}
+          paneLabel={paneLabel}
+          onSelect={(entry, opts) => store.selectEntry(entry, opts)}
+          onSelectPaths={(paths, mode) => store.selectPaths(paths, mode)}
+          onClearSelection={() => store.clearSelection()}
+          onNavigateUp={() => store.navigateUp()}
+          onOpen={handleOpen}
+          onContextMenu={handleContextMenu}
+          onRenameDraftChange={(v) => {
+            store.renameDraft = v;
+          }}
+          onCommitRename={() => void store.commitRename()}
+          onCancelRename={() => store.cancelRename()}
+          onFocus={onFocus}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          dropActive={dropActive}
+        />
+      </div>
+      {showOverlay && overlayMessage && (
+        <div className={styles.paneOverlay}>
+          <span>{overlayMessage}</span>
+          {disconnected && showReconnect && onReconnect && (
+            <>
+              <button
+                type="button"
+                className={styles.reconnectBtn}
+                onClick={() => onReconnect()}
+              >
+                {t("terminal.workspace.reconnect")}
+              </button>
+              <span className={styles.reconnectHint}>
+                {t("terminal.workspace.reconnectShortcut")}
+              </span>
+            </>
+          )}
+        </div>
+      )}
       {contextMenu && (
         <FilePaneContextMenu
           side={side}

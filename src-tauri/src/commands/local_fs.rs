@@ -1,5 +1,5 @@
 use crate::error::IpcResult;
-use crate::models::sftp::SftpEntry;
+use crate::models::sftp::{RecursiveFileEntry, SftpEntry};
 use crate::services::local_fs::{self, LocalStat};
 
 #[tauri::command]
@@ -35,6 +35,11 @@ pub async fn local_delete(path: String, is_directory: bool) -> IpcResult<()> {
 #[tauri::command]
 pub async fn local_home_dir() -> IpcResult<Option<String>> {
     Ok(local_fs::default_home_dir())
+}
+
+#[tauri::command]
+pub async fn local_list_recursive(path: String) -> IpcResult<Vec<RecursiveFileEntry>> {
+    local_fs::list_files_recursive(&path)
 }
 
 #[tauri::command]

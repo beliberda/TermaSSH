@@ -58,7 +58,9 @@ interface FileTableProps {
   onFocus: () => void;
   onDrop?: (e: DragEvent) => void;
   onDragOver?: (e: DragEvent) => void;
+  onDragLeave?: (e: DragEvent) => void;
   onDragStart?: (e: DragEvent, entry: SftpEntry) => void;
+  onDragEnd?: () => void;
   dropActive?: boolean;
 }
 
@@ -83,7 +85,9 @@ export function FileTable({
   onFocus,
   onDrop,
   onDragOver,
+  onDragLeave,
   onDragStart,
+  onDragEnd,
   dropActive,
 }: FileTableProps) {
   const { t } = useTranslation();
@@ -219,6 +223,7 @@ export function FileTable({
       tabIndex={0}
       onDrop={onDrop}
       onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onContextMenu={(e) => onContextMenu(e, null)}
     >
       <div className={styles.header}>
@@ -252,6 +257,7 @@ export function FileTable({
         ref={bodyRef}
         className={styles.body}
         onMouseDown={handleBodyMouseDown}
+        onDragOver={(e) => e.preventDefault()}
       >
         {isLoading && entries.length === 0 && (
           <p className={styles.status}>{t("files.list.loading")}</p>
@@ -260,27 +266,44 @@ export function FileTable({
           <p className={styles.status}>{t("files.list.empty")}</p>
         )}
         {showParent && (
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             className={styles.row}
-            onDoubleClick={onNavigateUp}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigateUp();
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              onNavigateUp();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onNavigateUp();
+              }
+            }}
           >
             <span className={`${styles.icon} ${styles.dir}`}>📁</span>
             <span className={styles.name}>..</span>
             <span className={styles.size}>—</span>
             <span className={styles.date}>—</span>
-          </button>
+          </div>
         )}
         {sorted.map((entry) => {
           const selected = selectedPaths.has(entry.path);
           return (
-            <button
+            <div
               key={entry.path}
-              type="button"
+              role="button"
+              tabIndex={0}
               data-entry-path={entry.path}
               className={`${styles.row} ${selected ? styles.selected : ""}`}
               draggable
               onDragStart={(e) => onDragStart?.(e, entry)}
+              onDragEnd={() => onDragEnd?.()}
               onClick={(e) =>
                 onSelect(entry, {
                   additive: e.ctrlKey || e.metaKey,
@@ -289,11 +312,19 @@ export function FileTable({
                 })
               }
               onDoubleClick={() => onOpen(entry)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen(entry);
+                }
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 onSelect(entry, { sortedPaths });
                 onContextMenu(e, entry);
               }}
+              onDragOver={(e) => e.preventDefault()}
             >
               <span
                 className={`${styles.icon} ${entry.isDirectory ? styles.dir : styles.file}`}
@@ -333,7 +364,7 @@ export function FileTable({
               <span className={styles.date}>
                 {formatDate(entry.modifiedAt)}
               </span>
-            </button>
+            </div>
           );
         })}
         {marquee && marquee.w > 0 && marquee.h > 0 && (

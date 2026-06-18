@@ -6,7 +6,7 @@ import { i18n } from "@i18n/index";
 import { getIpcErrorPayload } from "@ipc/client";
 import * as sftpIpc from "@ipc/sftp";
 import * as localIpc from "@ipc/local";
-import { joinRemotePath, parentRemotePath } from "@utils/filePaths";
+import { joinRemotePath, parentRemotePath, remotePathsEquivalent } from "@utils/filePaths";
 import { copyPathWithNotify } from "@utils/copyPathNotify";
 import { openInEditor } from "@utils/openInEditor";
 import {
@@ -93,9 +93,7 @@ export class RemoteBrowserStore {
   }
 
   bind(source: RemoteBindSource) {
-    const connectionChanged =
-      this.connectionId !== source.connectionId ||
-      this.sessionId !== source.sessionId;
+    const sessionChanged = this.sessionId !== source.sessionId;
 
     runInAction(() => {
       this.connectionId = source.connectionId;
@@ -103,7 +101,7 @@ export class RemoteBrowserStore {
       this.session = source.session;
       this.protocol = source.protocol;
       this.connectionStatus = source.status;
-      if (connectionChanged) {
+      if (sessionChanged) {
         this.cwd = source.session ? getSessionRemotePath(source.session) : "/";
         this.entries = [];
         this.selectedPaths.clear();
@@ -166,6 +164,12 @@ export class RemoteBrowserStore {
         generation !== this.loadDirGeneration ||
         connectionId !== this.connectionId
       ) {
+        return;
+      }
+      if (opts?.soft && !remotePathsEquivalent(target, resolvedPath)) {
+        runInAction(() => {
+          this.isLoading = false;
+        });
         return;
       }
       runInAction(() => {

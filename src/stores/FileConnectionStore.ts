@@ -22,6 +22,7 @@ export interface FileTab {
   status: ConnectionStatus;
   error?: AppError;
   connectLatencyMs?: number;
+  reconnecting?: boolean;
 }
 
 export class FileConnectionStore {
@@ -29,7 +30,7 @@ export class FileConnectionStore {
   tabs: FileTab[] = [];
   activeTabId: string | null = null;
   activeSessionId: string | null = null;
-  pendingConnect: { sessionId: string } | null = null;
+  pendingConnect: { sessionId: string; reconnectTabId?: string } | null = null;
   private sessionStore: SessionStore | null = null;
   private vaultStore: VaultStore | null = null;
   private workspaceStore: WorkspaceStore | null = null;
@@ -58,6 +59,10 @@ export class FileConnectionStore {
   get activeConnection(): FtpConnectionState | null {
     if (!this.activeSessionId) return null;
     return this.connections.get(this.activeSessionId) ?? null;
+  }
+
+  canReconnect(tab: FileTab): boolean {
+    return tab.status === 'error' || tab.status === 'disconnected';
   }
 
   requestConnect(sessionId: string) {
@@ -115,7 +120,11 @@ export class FileConnectionStore {
     await this.connect(sessionId, password);
   }
 
-  async connect(sessionId: string, password?: string) {
+  async connect(
+    sessionId: string,
+    password?: string,
+    reconnectTabId?: string,
+  ) {
     this.activeSessionId = sessionId;
     this.pendingConnect = null;
 
@@ -154,7 +163,7 @@ export class FileConnectionStore {
       const error = getIpcErrorPayload(e);
       if (error.code === 'ftp.passwordRequired') {
         runInAction(() => {
-          this.pendingConnect = { sessionId };
+          this.pendingConnect = { sessionId, reconnectTabId };
           if (tab) {
             tab.status = 'error';
             tab.error = undefined;
@@ -179,6 +188,55 @@ export class FileConnectionStore {
         }
       });
     }
+  }
+
+  async reconnectTab(tabId: string, password?: string) {
+    const tab = this.tabs.find((t) => t.id === tabId);
+    if (!tab || !this.canReconnect(tab)) return;
+
+    const session = this.sessionStore?.getSessionById(tab.sessionId);
+    if (!session) {
+      runInAction(() => {
+        if (this.sessionStore) {
+          this.sessionStore.error = { code: 'session.notFoundInList' };
+        }
+      });
+      return;
+    }
+
+    if (session.authType === 'password' && !password) {
+      if (!this.vaultStore?.isUnlocked) {
+        runInAction(() => {
+          this.pendingConnect = { sessionId: tab.sessionId, reconnectTabId: tabId };
+        });
+        return;
+      }
+    }
+
+    const oldConnectionId = tab.connectionId;
+    if (oldConnectionId) {
+      void ftpIpc.ftpDisconnect(oldConnectionId).catch((e) => {
+        console.error('[FileConnectionStore] disconnect before reconnect failed:', e);
+      });
+    }
+
+    runInAction(() => {
+      tab.status = 'connecting';
+      tab.connectionId = undefined;
+      tab.error = undefined;
+      tab.reconnecting = true;
+      this.pendingConnect = null;
+      this.activeTabId = tabId;
+      this.activeSessionId = tab.sessionId;
+      this.sessionStore?.selectSession(tab.sessionId);
+      this.workspaceStore?.setActiveFtpTab(tabId);
+    });
+
+    await this.connect(tab.sessionId, password, tabId);
+
+    runInAction(() => {
+      tab.reconnecting = false;
+    });
   }
 
   handleConnectionStatus(payload: ConnectionStatusPayload) {

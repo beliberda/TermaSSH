@@ -8,6 +8,13 @@ export async function sftpListDir(
   return safeInvoke<ListDirResponse>('sftp_list_dir', { connectionId, path });
 }
 
+export async function sftpExists(
+  connectionId: string,
+  path: string,
+): Promise<boolean> {
+  return safeInvoke<boolean>('sftp_exists', { connectionId, path });
+}
+
 export async function sftpUpload(
   connectionId: string,
   localPath: string,

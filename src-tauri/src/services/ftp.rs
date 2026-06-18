@@ -14,7 +14,7 @@ use crate::models::SessionConfig;
 use crate::services::transfer_cancel::TransferCancelRegistry;
 use crate::services::ssh::CONNECT_TIMEOUT_SECS;
 use crate::utils::cache_paths::open_cache_path;
-use crate::utils::sftp_paths::normalize_remote_path;
+use crate::utils::sftp_paths::{normalize_remote_path, remote_parent_path};
 use crate::utils::transfer::TransferProgress;
 
 pub type SharedFtpClient = Arc<Mutex<AsyncFtpStream>>;
@@ -102,6 +102,67 @@ pub async fn list_dir(client: &SharedFtpClient, path: &str) -> IpcResult<Vec<Sft
     Ok(entries)
 }
 
+async fn remote_path_exists(ftp: &mut AsyncFtpStream, path: &str) -> bool {
+    let path = normalize_remote_path(path);
+    if path == "/" {
+        return true;
+    }
+    let Some(parent) = remote_parent_path(&path) else {
+        return false;
+    };
+    let name = path.rsplit_once('/').map(|(_, n)| n).unwrap_or("");
+    let list_path = if parent == "/" {
+        None
+    } else {
+        Some(parent.as_str())
+    };
+    let lines = match ftp.list(list_path).await {
+        Ok(lines) => lines,
+        Err(_) => return false,
+    };
+    lines.iter().any(|line| {
+        parse_list_line(line)
+            .map(|file| file.name() == name)
+            .unwrap_or(false)
+    })
+}
+
+async fn ensure_remote_dir_all(ftp: &mut AsyncFtpStream, dir: &str) -> IpcResult<()> {
+    let dir = normalize_remote_path(dir);
+    if dir == "/" {
+        return Ok(());
+    }
+
+    if remote_path_exists(ftp, &dir).await {
+        return Ok(());
+    }
+
+    if let Some(parent) = remote_parent_path(&dir) {
+        Box::pin(ensure_remote_dir_all(ftp, &parent)).await?;
+    }
+
+    match ftp.mkdir(&dir).await {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            if remote_path_exists(ftp, &dir).await {
+                Ok(())
+            } else {
+                Err(IpcError::with_str_detail(
+                    "ftp.mkdirFailed",
+                    "path",
+                    &dir,
+                ))
+            }
+        }
+    }
+}
+
+pub async fn path_exists(client: &SharedFtpClient, path: &str) -> IpcResult<bool> {
+    let path = normalize_remote_path(path);
+    let mut ftp = client.lock().await;
+    Ok(remote_path_exists(&mut ftp, &path).await)
+}
+
 pub async fn upload_file(
     client: &SharedFtpClient,
     local_path: &str,
@@ -151,6 +212,13 @@ pub async fn upload_file(
     };
 
     let remote_path = normalize_remote_path(remote_path);
+    {
+        let mut ftp = client.lock().await;
+        if let Some(parent) = remote_parent_path(&remote_path) {
+            ensure_remote_dir_all(&mut ftp, &parent).await?;
+        }
+    }
+
     let mut file = tokio::fs::File::open(local)
         .await
         .map_err(|e| IpcError::with_str_detail("fs.openLocalFailed", "raw", e.to_string()))?;

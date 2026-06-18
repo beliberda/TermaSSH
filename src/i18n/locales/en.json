@@ -235,7 +235,12 @@
       "newFolder": "New folder",
       "uploadToServer": "Upload to server",
       "openInEditor": "Open in editor",
+      "openFile": "Open file",
       "showInExplorer": "Show in explorer"
+    },
+    "drop": {
+      "sameSide": "Drop on the opposite pane to transfer files",
+      "notConnected": "Not connected — reconnect to transfer files"
     },
     "shortcuts": {
       "refresh": "Refresh file panes",
@@ -388,6 +393,8 @@
       "removeDirFailed": "Failed to remove directory",
       "removeFileFailed": "Failed to remove file",
       "statFailed": "Failed to stat file",
+      "dirNotFound": "Directory not found: {{path}}",
+      "notADirectory": "Not a directory: {{path}}",
       "openDirAsFile": "Cannot open directory as file",
       "fetchRetryFailed": "Failed to cache file"
     },

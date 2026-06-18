@@ -88,7 +88,7 @@ export function FilePaneContextMenu({
             onClose();
           }}
         >
-          {t("fileTransfer.context.openInEditor")}
+          {t("fileTransfer.context.openFile")}
         </button>
       )}
       {side === "local" && onRevealInExplorer && (

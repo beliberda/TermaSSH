@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{IpcError, IpcResult};
-use crate::models::sftp::SftpEntry;
+use crate::models::sftp::{RecursiveFileEntry, SftpEntry};
 
 fn system_time_to_iso(time: std::time::SystemTime) -> Option<String> {
     let secs = time.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
@@ -116,6 +116,83 @@ pub fn delete(path: &str, is_directory: bool) -> IpcResult<()> {
 
 pub fn default_home_dir() -> Option<String> {
     dirs::home_dir().map(|p| p.to_string_lossy().to_string())
+}
+
+fn collect_files_recursive(
+    dir: &Path,
+    relative_prefix: &str,
+    out: &mut Vec<RecursiveFileEntry>,
+) -> IpcResult<()> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| IpcError::with_str_detail("fs.listLocalFailed", "raw", e.to_string()))?;
+
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| IpcError::with_str_detail("fs.listLocalFailed", "raw", e.to_string()))?;
+        let metadata = entry
+            .metadata()
+            .map_err(|e| IpcError::with_str_detail("fs.statLocalFailed", "raw", e.to_string()))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path_str = join_local_path(dir, &name);
+        let relative_path = if relative_prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", relative_prefix, name)
+        };
+
+        if metadata.is_dir() {
+            collect_files_recursive(Path::new(&path_str), &relative_path, out)?;
+        } else {
+            out.push(RecursiveFileEntry {
+                path: path_str,
+                name,
+                relative_path,
+                size: metadata.len(),
+                modified_at: metadata.modified().ok().and_then(system_time_to_iso),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+pub fn list_files_recursive(local_path: &str) -> IpcResult<Vec<RecursiveFileEntry>> {
+    let p = Path::new(local_path);
+    if !p.exists() {
+        return Err(IpcError::with_str_detail(
+            "fs.localPathNotFound",
+            "path",
+            local_path,
+        ));
+    }
+
+    if p.is_file() {
+        let metadata = std::fs::metadata(p)
+            .map_err(|e| IpcError::with_str_detail("fs.statLocalFailed", "raw", e.to_string()))?;
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        return Ok(vec![RecursiveFileEntry {
+            path: local_path.to_string(),
+            name: name.clone(),
+            relative_path: name,
+            size: metadata.len(),
+            modified_at: metadata.modified().ok().and_then(system_time_to_iso),
+        }]);
+    }
+
+    if !p.is_dir() {
+        return Err(IpcError::with_str_detail(
+            "fs.localNotADirectory",
+            "path",
+            local_path,
+        ));
+    }
+
+    let mut out = Vec::new();
+    collect_files_recursive(p, "", &mut out)?;
+    Ok(out)
 }
 
 pub fn normalize_local_path(path: &str) -> String {

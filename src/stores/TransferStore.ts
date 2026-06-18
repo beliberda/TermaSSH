@@ -11,7 +11,7 @@ import * as sftpIpc from '@ipc/sftp';
 import * as transferIpc from '@ipc/transfer';
 import { getIpcErrorPayload } from '@ipc/client';
 import { listenTransferProgress } from '@ipc/events';
-import { basename, joinLocalPath, joinRemotePath } from '@utils/filePaths';
+import { joinLocalPath, joinRemotePath } from '@utils/filePaths';
 import type { LocalBrowserStore } from './LocalBrowserStore';
 import type { RemoteBrowserStore } from './RemoteBrowserStore';
 import type { SessionStore } from './SessionStore';
@@ -19,6 +19,11 @@ import type { SettingsStore } from './SettingsStore';
 
 export interface PreparingDownload {
   remotePath: string;
+  label: string;
+}
+
+export interface PreparingUpload {
+  localPath: string;
   label: string;
 }
 
@@ -32,12 +37,22 @@ function joinLocalRelative(base: string, relativePath: string): string {
   return result;
 }
 
+function joinRemoteRelative(base: string, relativePath: string): string {
+  const parts = relativePath.split('/').filter(Boolean);
+  let result = base.replace(/\/+$/, '') || '/';
+  for (const part of parts) {
+    result = joinRemotePath(result, part);
+  }
+  return result;
+}
+
 export class TransferStore {
   tasks: TransferTask[] = [];
   queueExpanded = true;
   processing = false;
   queueDrainPending = false;
   preparingDownloads = new Map<string, PreparingDownload>();
+  preparingUploads = new Map<string, PreparingUpload>();
   pendingConflict: FileConflictInfo | null = null;
   private conflictResolve: ((value: 'skip' | 'replace') => void) | null = null;
   private sessionOverridePolicy: FileConflictPolicy | null = null;
@@ -197,27 +212,81 @@ export class TransferStore {
     }
   }
 
-  enqueueUpload(
-    localPaths: string[],
+  async enqueueUpload(
+    entries: {
+      path: string;
+      name: string;
+      isDirectory: boolean;
+    }[],
     remoteDir: string,
     connectionId: string,
   ) {
-    for (const localPath of localPaths) {
-      const name = basename(localPath);
-      const task: TransferTask = {
-        id: crypto.randomUUID(),
-        connectionId,
-        fileName: name,
-        direction: 'upload',
-        localPath,
-        remotePath: joinRemotePath(remoteDir, name),
-        isDirectory: false,
-        status: 'queued',
-        bytesDone: 0,
-        bytesTotal: 0,
-      };
-      this.tasks.push(task);
+    const newTasks: TransferTask[] = [];
+
+    for (const entry of entries) {
+      if (entry.isDirectory) {
+        const localKey = entry.path;
+        runInAction(() => {
+          this.preparingUploads.set(localKey, {
+            localPath: localKey,
+            label: entry.name,
+          });
+        });
+        try {
+          const files = await localIpc.localListRecursive(entry.path);
+          const remoteBase = joinRemotePath(remoteDir, entry.name);
+          for (const file of files) {
+            newTasks.push({
+              id: crypto.randomUUID(),
+              connectionId,
+              fileName: file.relativePath,
+              direction: 'upload',
+              localPath: file.path,
+              remotePath: joinRemoteRelative(remoteBase, file.relativePath),
+              isDirectory: false,
+              status: 'queued',
+              bytesDone: 0,
+              bytesTotal: file.size,
+            });
+          }
+        } catch (e) {
+          newTasks.push({
+            id: crypto.randomUUID(),
+            connectionId,
+            fileName: entry.name,
+            direction: 'upload',
+            localPath: entry.path,
+            remotePath: joinRemotePath(remoteDir, entry.name),
+            isDirectory: true,
+            status: 'error',
+            bytesDone: 0,
+            bytesTotal: 0,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        } finally {
+          runInAction(() => {
+            this.preparingUploads.delete(localKey);
+          });
+        }
+      } else {
+        newTasks.push({
+          id: crypto.randomUUID(),
+          connectionId,
+          fileName: entry.name,
+          direction: 'upload',
+          localPath: entry.path,
+          remotePath: joinRemotePath(remoteDir, entry.name),
+          isDirectory: false,
+          status: 'queued',
+          bytesDone: 0,
+          bytesTotal: 0,
+        });
+      }
     }
+
+    runInAction(() => {
+      this.tasks.push(...newTasks);
+    });
     void this.processQueue();
   }
 
@@ -308,8 +377,12 @@ export class TransferStore {
     if (!remote?.connectionId || !local) return;
     const selected = local.selectedEntries;
     if (selected.length === 0) return;
-    this.enqueueUpload(
-      selected.map((e) => e.path),
+    void this.enqueueUpload(
+      selected.map((e) => ({
+        path: e.path,
+        name: e.name,
+        isDirectory: e.isDirectory,
+      })),
       remote.cwd,
       remote.connectionId,
     );

@@ -30,7 +30,7 @@ export class WorkspaceStore {
     if (!this.active) return false;
     if (this.active.kind === 'ftp') {
       const tab = fileConnectionStore.tabs.find((t) => t.id === this.active!.tabId);
-      return tab?.status === 'connected' || tab?.status === 'connecting';
+      return Boolean(tab);
     }
     const tab = terminalStore.tabs.find((t) => t.id === this.active!.tabId);
     if (!tab) return false;

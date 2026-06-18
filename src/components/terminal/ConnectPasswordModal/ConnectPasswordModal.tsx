@@ -18,7 +18,7 @@ export const ConnectPasswordModal = observer(function ConnectPasswordModal() {
   const pendingKey = sshPending
     ? `${sshPending.sessionId}:${sshPending.passphraseRetry ? 'passphrase' : 'password'}:${sshPending.reconnectTabId ?? 'new'}`
     : ftpPending
-      ? `ftp:${ftpPending.sessionId}`
+      ? `ftp:${ftpPending.sessionId}:${ftpPending.reconnectTabId ?? 'new'}`
       : null;
 
   useEffect(() => {
@@ -59,7 +59,12 @@ export const ConnectPasswordModal = observer(function ConnectPasswordModal() {
 
   const handleConnect = () => {
     if (isFtp) {
-      void fileConnectionStore.openTab(pending.sessionId, password);
+      const reconnectTabId = ftpPending?.reconnectTabId;
+      if (reconnectTabId) {
+        void fileConnectionStore.reconnectTab(reconnectTabId, password);
+      } else {
+        void fileConnectionStore.openTab(pending.sessionId, password);
+      }
       void persistPasswordIfNeeded();
     } else if (session) {
       const reconnectTabId = sshPending?.reconnectTabId;

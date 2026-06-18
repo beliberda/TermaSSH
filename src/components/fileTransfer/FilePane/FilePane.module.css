@@ -7,6 +7,51 @@
   border: 1px solid var(--border, #333);
   border-radius: 4px;
   overflow: hidden;
+  position: relative;
+}
+
+.paneBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.paneOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--color-text-muted, #aaa);
+  font-size: 14px;
+}
+
+.reconnectBtn {
+  padding: 6px 14px;
+  border: 1px solid var(--border, #444);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.reconnectBtn:hover {
+  background: var(--color-accent, #0e639c);
+  border-color: var(--color-accent, #0e639c);
+  color: var(--color-text, #fff);
+}
+
+.reconnectHint {
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .paneTitle {
@@ -15,4 +60,39 @@
   font-weight: 600;
   background: var(--surface-elevated, #252525);
   border-bottom: 1px solid var(--border, #333);
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #e57373;
+  background: rgba(229, 115, 115, 0.1);
+  border-bottom: 1px solid var(--border, #333);
+  flex-shrink: 0;
+}
+
+.errorText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.errorDismiss {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.errorDismiss:hover {
+  opacity: 0.8;
 }

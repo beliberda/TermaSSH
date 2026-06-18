@@ -1,8 +1,10 @@
 import { makeAutoObservable, runInAction } from "mobx";
 import type { SftpEntry } from "@/types";
 import type { AppError } from "@i18n/types";
+import { i18n } from "@i18n/index";
 import { getIpcErrorPayload } from "@ipc/client";
 import * as localIpc from "@ipc/local";
+import * as sftpIpc from "@ipc/sftp";
 import { parentLocalPath } from "@utils/filePaths";
 import { openInEditor } from "@utils/openInEditor";
 import {
@@ -123,11 +125,14 @@ export class LocalBrowserStore {
   async doSyncRemoteBrowse(localPath: string): Promise<void> {
     const remote = this.remoteBrowserStore;
     if (!remote?.session || !isSyncBrowseEnabled(remote.session)) return;
-    if (!remote.canBrowse) return;
+    if (!remote.canBrowse || !remote.connectionId) return;
 
     const mapped = mapLocalToRemote(localPath, remote.session);
     if (!mapped) return;
     if (pathsEqual(remote.cwd, mapped)) return;
+
+    const exists = await sftpIpc.sftpExists(remote.connectionId, mapped);
+    if (!exists) return;
 
     await remote.loadDir(mapped, { soft: true, sync: false });
   }
@@ -248,6 +253,22 @@ export class LocalBrowserStore {
 
   async deleteEntry(entry: SftpEntry) {
     this.cancelRename();
+
+    if (entry.isDirectory) {
+      const ok = window.confirm(
+        i18n.t("files.confirm.deleteDir", {
+          name: entry.name,
+          path: entry.path,
+          count: 0,
+        }),
+      );
+      if (!ok) return;
+    } else if (
+      !window.confirm(i18n.t("files.confirm.deleteFile", { name: entry.name }))
+    ) {
+      return;
+    }
+
     runInAction(() => {
       this.isLoading = true;
       this.error = null;

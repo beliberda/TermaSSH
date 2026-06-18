@@ -12,7 +12,9 @@ export const TransferQueuePanel = observer(function TransferQueuePanel() {
   const { t } = useTranslation();
   const { transferStore } = useStores();
 
-  const preparing = Array.from(transferStore.preparingDownloads.values());
+  const preparingDownloads = Array.from(transferStore.preparingDownloads.values());
+  const preparingUploads = Array.from(transferStore.preparingUploads.values());
+  const preparing = [...preparingDownloads, ...preparingUploads];
   const hasContent = transferStore.tasks.length > 0 || preparing.length > 0;
 
   if (!hasContent) return null;
@@ -57,11 +59,26 @@ export const TransferQueuePanel = observer(function TransferQueuePanel() {
       </div>
       {transferStore.queueExpanded && (
         <div className={styles.list}>
-          {preparing.map((item) => (
-            <div key={item.remotePath} className={styles.item}>
+          {preparingDownloads.map((item) => (
+            <div key={`dl-${item.remotePath}`} className={styles.item}>
               <div className={styles.itemHeader}>
                 <span className={styles.fileName} title={item.label}>
                   ↓ {item.label}
+                </span>
+                <span className={styles.status}>
+                  {t('fileTransfer.transfers.preparing')}
+                </span>
+              </div>
+              <div className={styles.barTrack}>
+                <div className={`${styles.barFill} ${styles.barIndeterminate}`} />
+              </div>
+            </div>
+          ))}
+          {preparingUploads.map((item) => (
+            <div key={`ul-${item.localPath}`} className={styles.item}>
+              <div className={styles.itemHeader}>
+                <span className={styles.fileName} title={item.label}>
+                  ↑ {item.label}
                 </span>
                 <span className={styles.status}>
                   {t('fileTransfer.transfers.preparing')}

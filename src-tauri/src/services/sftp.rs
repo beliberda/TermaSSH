@@ -2,7 +2,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use russh_sftp::client::SftpSession;
+use serde_json::json;
 use tauri::AppHandle;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use crate::error::{IpcError, IpcResult};
@@ -11,7 +13,7 @@ use crate::services::sftp_transfer_pool::SftpTransferPool;
 use crate::services::ssh::SharedSshHandle;
 use crate::services::transfer_cancel::TransferCancelRegistry;
 use crate::utils::cache_paths::open_cache_path;
-use crate::utils::sftp_paths::normalize_remote_path;
+use crate::utils::sftp_paths::{normalize_remote_path, remote_parent_path};
 use crate::utils::transfer::TransferProgress;
 
 #[derive(Clone)]
@@ -110,6 +112,11 @@ async fn resolve_browse_dir(sftp: &SftpSession, path: &str) -> IpcResult<String>
         if metadata.is_dir() {
             return Ok(path.to_string());
         }
+        return Err(IpcError::with_str_detail(
+            "sftp.notADirectory",
+            "path",
+            path,
+        ));
     }
 
     if path.starts_with('~') || path == "." || !path.starts_with('/') {
@@ -124,16 +131,15 @@ async fn resolve_browse_dir(sftp: &SftpSession, path: &str) -> IpcResult<String>
         }
     }
 
-    if path != "/" {
-        if let Ok(home) = sftp.canonicalize(".").await {
-            return Ok(home);
-        }
-        if sftp.try_exists("/").await.unwrap_or(false) {
-            return Ok("/".to_string());
-        }
+    if path.starts_with('/') {
+        return Err(IpcError::with_str_detail(
+            "sftp.dirNotFound",
+            "path",
+            path,
+        ));
     }
 
-    Ok(path.to_string())
+    Err(IpcError::with_str_detail("sftp.dirNotFound", "path", path))
 }
 
 async fn list_dir_unlocked(
@@ -197,6 +203,43 @@ pub async fn upload_file_via_pool(
         cancel,
     )
     .await
+}
+
+async fn ensure_remote_dir_all(sftp: &SftpSession, dir: &str) -> IpcResult<()> {
+    let dir = normalize_remote_path(dir);
+    if dir == "/" {
+        return Ok(());
+    }
+
+    if sftp.try_exists(&dir).await.unwrap_or(false) {
+        let metadata = sftp
+            .metadata(&dir)
+            .await
+            .map_err(|e| IpcError::with_str_detail("sftp.statFailed", "raw", e.to_string()))?;
+        if !metadata.is_dir() {
+            return Err(IpcError::with_str_detail(
+                "sftp.notADirectory",
+                "path",
+                &dir,
+            ));
+        }
+        return Ok(());
+    }
+
+    if let Some(parent) = remote_parent_path(&dir) {
+        Box::pin(ensure_remote_dir_all(sftp, &parent)).await?;
+    }
+
+    match sftp.create_dir(&dir).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            if sftp.try_exists(&dir).await.unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(IpcError::with_str_detail("sftp.mkdirFailed", "raw", e.to_string()))
+            }
+        }
+    }
 }
 
 async fn upload_file_with_session(
@@ -268,11 +311,34 @@ async fn upload_file_with_session(
     }
 
     let remote_path = normalize_remote_path(remote_path);
+    if let Some(parent) = remote_parent_path(&remote_path) {
+        ensure_remote_dir_all(sftp, &parent).await?;
+    }
 
-    let result = sftp
-        .write(&remote_path, &data)
-        .await
-        .map_err(|e| IpcError::with_str_detail("sftp.uploadFailed", "raw", e.to_string()));
+    let result = async {
+        let mut file = sftp
+            .create(&remote_path)
+            .await
+            .map_err(|e| {
+                IpcError::with_details(
+                    "sftp.uploadFailed",
+                    json!({ "raw": e.to_string(), "remotePath": remote_path.clone() }),
+                )
+            })?;
+        file.write_all(&data).await.map_err(|e| {
+            IpcError::with_details(
+                "sftp.uploadFailed",
+                json!({ "raw": e.to_string(), "remotePath": remote_path.clone() }),
+            )
+        })?;
+        file.shutdown().await.map_err(|e| {
+            IpcError::with_details(
+                "sftp.uploadFailed",
+                json!({ "raw": e.to_string(), "remotePath": remote_path.clone() }),
+            )
+        })
+    }
+    .await;
 
     match (&result, &progress) {
         (Ok(()), Some(p)) => p.done(),
@@ -480,6 +546,23 @@ async fn download_dir_inner(
     }
 
     Ok(())
+}
+
+pub async fn path_exists(
+    ssh_handle: &SharedSshHandle,
+    cache: &SftpSessionCache,
+    path: &str,
+) -> IpcResult<bool> {
+    let _browse = cache.browse_lock.lock().await;
+    let path = normalize_remote_path(path);
+
+    ensure_sftp(ssh_handle, cache).await?;
+    let guard = cache.session.lock().await;
+    let sftp = guard
+        .as_ref()
+        .ok_or_else(|| IpcError::new("sftp.notInitialized"))?;
+
+    Ok(sftp.try_exists(&path).await.unwrap_or(false))
 }
 
 pub async fn mkdir(
