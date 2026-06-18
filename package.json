@@ -1,7 +1,7 @@
 {
   "name": "termassh",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Open-source SSH terminal and SFTP/FTP file browser — a lightweight MobaXterm alternative",
   "license": "MIT",
   "repository": {
