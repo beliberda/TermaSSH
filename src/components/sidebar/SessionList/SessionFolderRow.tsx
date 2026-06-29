@@ -99,7 +99,7 @@ export const SessionFolderRow = observer(function SessionFolderRow({
       <div
         ref={setDropRef}
         className={`${styles.folderRow} ${isOver ? styles.folderRowOver : ""}`}
-        style={{ paddingLeft: 12 + depth * 14 }}
+        style={{ paddingLeft: 12 + depth * 20 }}
         onClick={handleRowClick}
         onContextMenu={(e) => onFolderContextMenu(e, folder)}
         {...attributes}
@@ -109,7 +109,7 @@ export const SessionFolderRow = observer(function SessionFolderRow({
           {folder.collapsed ? "▸" : "▾"}
         </span>
         <span className={styles.folderIcon}>
-          <IconFolder width={24} height={24} />
+          <IconFolder width={15} height={15} />
         </span>
         {isRenaming ? (
           <input

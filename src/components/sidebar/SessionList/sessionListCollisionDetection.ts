@@ -39,7 +39,9 @@ export function createSessionListCollisionDetection(
       return folderHits;
     }
 
-    return closestCenter(args);
+    return closestCenter(args).filter(
+      (c) => !String(c.id).startsWith('droppable-'),
+    );
   };
 }
 

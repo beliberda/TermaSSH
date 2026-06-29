@@ -28,8 +28,8 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 6px 10px 6px 20px;
   border-bottom: 1px solid var(--color-border);
   cursor: grab;
   transition: background 0.15s;
@@ -55,7 +55,7 @@
 }
 
 .name {
-  font-size: var(--font-size-base);
+  font-size: 12px;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
@@ -63,7 +63,7 @@
 }
 
 .host {
-  font-size: var(--font-size-sm);
+  font-size: 10px;
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -83,14 +83,14 @@
 .editBtn,
 .deleteBtn {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -100,7 +100,7 @@
 }
 
 .deleteBtn {
-  font-size: 16px;
+  font-size: 13px;
 }
 
 .deleteBtn:hover {
@@ -151,7 +151,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px 8px 0;
+  padding: 5px 12px 5px 0;
   border-bottom: 1px solid var(--color-border);
   cursor: pointer;
   touch-action: none;
@@ -167,24 +167,22 @@
 
 .collapseBtn {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   color: var(--color-text-muted);
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
   user-select: none;
 }
 
 .folderIcon {
-  flex-shrink: 0;
-  font-size: 14px;
-  line-height: 1;
+  width: 20px;
 }
 
 .folderName {
 
   min-width: 0;
-  font-size: var(--font-size-base);
+  font-size: 13px;
   font-weight: 500;
   color: var(--color-text);
   overflow: hidden;

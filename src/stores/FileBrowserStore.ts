@@ -501,22 +501,24 @@ export class FileBrowserStore {
   async upload() {
     if (!this.connectionId) return;
 
-    const selected = await open({ multiple: false });
-    if (!selected || Array.isArray(selected)) return;
-
-    const remotePath = joinRemotePath(this.cwd, basename(selected));
-
     runInAction(() => {
       this.isLoading = true;
       this.error = null;
     });
 
     try {
+      const selected = await open({ multiple: false });
+      if (!selected || Array.isArray(selected)) return;
+
+      const remotePath = joinRemotePath(this.cwd, basename(selected));
       await sftpIpc.sftpUpload(this.connectionId, selected, remotePath);
       await this.loadDir(this.cwd);
     } catch (e) {
       runInAction(() => {
         this.error = mapFileError(e, 'files.uploadFailed');
+      });
+    } finally {
+      runInAction(() => {
         this.isLoading = false;
       });
     }

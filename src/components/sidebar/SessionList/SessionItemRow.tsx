@@ -1,11 +1,11 @@
-import type { CSSProperties } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { observer } from 'mobx-react-lite';
-import { useTranslation } from 'react-i18next';
-import type { SessionConfig } from '@/types';
-import { useStores } from '@stores/index';
-import styles from './SessionList.module.css';
+import type { CSSProperties } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { observer } from "mobx-react-lite";
+import { useTranslation } from "react-i18next";
+import type { SessionConfig } from "@/types";
+import { useStores } from "@stores/index";
+import styles from "./SessionList.module.css";
 
 interface SessionItemRowProps {
   session: SessionConfig;
@@ -33,7 +33,7 @@ export const SessionItemRow = observer(function SessionItemRow({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.45 : 1,
-    paddingLeft: 12 + depth * 14,
+    paddingLeft: 20 + depth * 20,
   };
 
   return (
@@ -41,7 +41,7 @@ export const SessionItemRow = observer(function SessionItemRow({
       ref={setNodeRef}
       style={style}
       data-session-id={session.id}
-      className={`${styles.item} ${sessionStore.selectedId === session.id ? styles.itemSelected : ''}`}
+      className={`${styles.item} ${sessionStore.selectedId === session.id ? styles.itemSelected : ""}`}
       onContextMenu={(e) => onContextMenu(e, session)}
       {...attributes}
       {...listeners}
@@ -56,7 +56,7 @@ export const SessionItemRow = observer(function SessionItemRow({
       <button
         type="button"
         className={styles.editBtn}
-        title={t('sidebar.sessions.edit')}
+        title={t("sidebar.sessions.edit")}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
@@ -68,13 +68,13 @@ export const SessionItemRow = observer(function SessionItemRow({
       <button
         type="button"
         className={styles.deleteBtn}
-        title={t('common.delete')}
+        title={t("common.delete")}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           if (
             window.confirm(
-              t('sidebar.sessions.deleteConfirm', { name: session.name }),
+              t("sidebar.sessions.deleteConfirm", { name: session.name }),
             )
           ) {
             void sessionStore.deleteSession(session.id);

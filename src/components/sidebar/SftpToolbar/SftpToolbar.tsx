@@ -31,7 +31,7 @@ export const SftpToolbar = observer(function SftpToolbar() {
       <button
         type="button"
         className={styles.button}
-        onClick={() => void fileBrowserStore.upload()}
+        onClick={() => fileBrowserStore.upload().catch(console.error)}
         disabled={fileBrowserStore.isLoading}
       >
         {t('common.upload')}
