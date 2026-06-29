@@ -9,6 +9,13 @@
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
 }
 
 .list {

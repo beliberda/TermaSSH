@@ -149,14 +149,14 @@ export const SessionFolderRow = observer(function SessionFolderRow({
           </span>
         )}
       </div>
-      {!folder.collapsed && (
+      <div style={folder.collapsed ? { display: 'none' } : undefined}>
         <SessionTreeList
           parentId={folder.id}
           depth={depth + 1}
           onSessionContextMenu={onSessionContextMenu}
           onFolderContextMenu={onFolderContextMenu}
         />
-      )}
+      </div>
     </li>
   );
 });
