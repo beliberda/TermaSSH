@@ -76,8 +76,7 @@ export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
     activeTerminalTab?.reconnecting === true ||
     activeFtpTab?.reconnecting === true;
 
-  const remoteDisconnected =
-    !remoteBrowserStore.canBrowse && !remoteConnecting;
+  const remoteDisconnected = !remoteBrowserStore.canBrowse && !remoteConnecting;
 
   const canReconnect =
     (isFtpMode &&
@@ -117,9 +116,11 @@ export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
   };
 
   const allowDrop = (e: DragEvent, target: 'local' | 'remote') => {
-    if (!dragSourceSide.current) return;
-    if (!isValidDropTarget(target)) return;
     e.preventDefault();
+    if (!dragSourceSide.current || !isValidDropTarget(target)) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
     e.dataTransfer.dropEffect = 'copy';
     setDropTarget(target);
   };
@@ -207,10 +208,7 @@ export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
             }}
           />
         </div>
-        <PaneResizeHandle
-          containerRef={panesRef}
-          onResize={setLocalPercent}
-        />
+        <PaneResizeHandle containerRef={panesRef} onResize={setLocalPercent} />
         <div className={styles.remotePane}>
           <FilePane
             side="remote"
