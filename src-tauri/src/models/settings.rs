@@ -23,6 +23,41 @@ pub struct AppSettings {
     pub max_concurrent_transfers: u16,
     #[serde(default = "default_shortcuts")]
     pub shortcuts: HashMap<String, String>,
+    #[serde(default)]
+    pub transparency_enabled: bool,
+    #[serde(default)]
+    pub per_panel_opacity_enabled: bool,
+    #[serde(default = "default_panel_opacity")]
+    pub opacity: PanelOpacity,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelOpacity {
+    #[serde(default = "default_opacity_value")]
+    pub window: u8,
+    #[serde(default = "default_opacity_value")]
+    pub sidebar: u8,
+    #[serde(default = "default_opacity_value")]
+    pub panel: u8,
+    #[serde(default = "default_opacity_value")]
+    pub tab_bar: u8,
+    #[serde(default = "default_opacity_value")]
+    pub status_bar: u8,
+}
+
+fn default_opacity_value() -> u8 {
+    85
+}
+
+fn default_panel_opacity() -> PanelOpacity {
+    PanelOpacity {
+        window: default_opacity_value(),
+        sidebar: default_opacity_value(),
+        panel: default_opacity_value(),
+        tab_bar: default_opacity_value(),
+        status_bar: default_opacity_value(),
+    }
 }
 
 fn default_shortcuts() -> HashMap<String, String> {
@@ -73,6 +108,9 @@ impl Default for AppSettings {
             default_file_conflict_policy: default_file_conflict_policy(),
             max_concurrent_transfers: default_max_concurrent_transfers(),
             shortcuts: default_shortcuts(),
+            transparency_enabled: false,
+            per_panel_opacity_enabled: false,
+            opacity: default_panel_opacity(),
         }
     }
 }

@@ -86,6 +86,7 @@
     "back": "Back",
     "groups": {
       "general": "General",
+      "appearance": "Aspetto",
       "terminal": "Terminal",
       "connections": "Connections",
       "passwordManager": "Password manager",
@@ -130,7 +131,20 @@
     "editorPath": "Editor predefinito (opzionale)",
     "editorPlaceholder": "Vuoto — applicazione di sistema predefinita",
     "sshPort": "Porta SSH predefinita",
-    "ftpPort": "Porta FTP predefinita"
+    "ftpPort": "Porta FTP predefinita",
+    "appearance": {
+      "transparencyEnabled": "Abilita trasparenza finestra",
+      "transparencyHint": "Rende la finestra trasparente senza sfocatura: il contenuto dietro resta nitido e leggibile, come la trasparenza della console classica di Windows.",
+      "windowOpacity": "Opacità generale",
+      "perPanelEnabled": "Personalizza opacità per pannello",
+      "perPanelHint": "Imposta un valore diverso per ogni pannello invece di uno condiviso.",
+      "panels": {
+        "sidebar": "Barra laterale",
+        "panel": "Pannello terminale/file",
+        "tabBar": "Barra delle schede",
+        "statusBar": "Barra di stato"
+      }
+    }
   },
   "terminal": {
     "status": {
@@ -329,7 +343,8 @@
       "editorLaunchFailed": "Impossibile avviare l'editor",
       "pathEmpty": "Percorso vuoto",
       "homeNotFound": "Directory home non trovata",
-      "keyFileNotFound": "File chiave non trovato: {{path}}"
+      "keyFileNotFound": "File chiave non trovato: {{path}}",
+      "stageUploadFailed": "Impossibile preparare il file per il caricamento"
     },
     "settings": {
       "unsupportedSchema": "Versione schema impostazioni non supportata",

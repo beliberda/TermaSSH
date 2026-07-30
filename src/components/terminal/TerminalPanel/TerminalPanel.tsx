@@ -32,7 +32,11 @@ export const TerminalPanel = observer(function TerminalPanel({
       fontSize: settingsStore.settings.terminalFontSize,
       fontFamily: settingsStore.settings.terminalFontFamily,
       theme: {
-        background: isLight ? '#ffffff' : '#1e1e1e',
+        // Fully transparent: the terminal has no background color of its
+        // own, so it shows through to the .panel wrapper's own (opacity
+        // setting-aware) background instead of painting a second, separate
+        // opaque/translucent layer on top of it.
+        background: '#00000000',
         foreground: isLight ? '#1e1e1e' : '#cccccc',
         cursor: isLight ? '#1e1e1e' : '#cccccc',
       },

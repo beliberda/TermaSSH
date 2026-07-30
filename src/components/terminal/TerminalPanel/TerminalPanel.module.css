@@ -2,7 +2,7 @@
   position: absolute;
   inset: 0;
   padding: 16px;
-  background: var(--color-bg);
+  background: rgba(var(--color-bg-rgb), var(--opacity-panel));
   visibility: hidden;
   pointer-events: none;
 }
@@ -15,4 +15,13 @@
 .terminal {
   width: 100%;
   height: 100%;
+}
+
+/* xterm.js's own stylesheet hardcodes an opaque #000 background on this
+   layer (for OS X scrollbar rendering); it normally gets overridden inline
+   once the terminal's theme is applied, but the !important guards against
+   a flash of opaque black before that happens and against future xterm
+   versions reintroducing an opaque default here. */
+.terminal :global(.xterm-viewport) {
+  background-color: transparent !important;
 }

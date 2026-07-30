@@ -7,6 +7,6 @@ body,
   height: 100%;
   font-family: var(--font-family);
   font-size: var(--font-size-base);
-  background: var(--color-bg);
+  background: rgba(var(--color-bg-rgb), var(--opacity-window));
   color: var(--color-text);
 }

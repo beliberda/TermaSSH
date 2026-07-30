@@ -10,6 +10,7 @@
     "beforeBuildCommand": "npm run sync:cargo-version && npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "TermaSSH",
@@ -17,7 +18,8 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "transparent": true
       }
     ],
     "security": {

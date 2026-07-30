@@ -4,7 +4,7 @@
   gap: 16px;
   height: var(--statusbar-height);
   padding: 0 12px;
-  background: var(--color-sidebar-bg);
+  background: rgba(var(--color-sidebar-bg-rgb), var(--opacity-statusbar));
   border-top: 1px solid var(--color-border);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);

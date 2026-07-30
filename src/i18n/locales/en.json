@@ -99,6 +99,7 @@
     "back": "Back",
     "groups": {
       "general": "General",
+      "appearance": "Appearance",
       "terminal": "Terminal",
       "connections": "Connections",
       "passwordManager": "Password manager",
@@ -144,7 +145,20 @@
     "editorPlaceholder": "Empty — system default application",
     "sshPort": "Default SSH port",
     "ftpPort": "Default FTP port",
-    "maxConcurrentTransfers": "Parallel file transfers"
+    "maxConcurrentTransfers": "Parallel file transfers",
+    "appearance": {
+      "transparencyEnabled": "Enable window transparency",
+      "transparencyHint": "Makes the window see-through so whatever is behind it stays crisp and readable — like the classic Windows console transparency, no blur.",
+      "windowOpacity": "Overall opacity",
+      "perPanelEnabled": "Customize opacity per panel",
+      "perPanelHint": "Set a different opacity for each panel instead of one shared value.",
+      "panels": {
+        "sidebar": "Sidebar",
+        "panel": "Terminal / file panel",
+        "tabBar": "Tab bar",
+        "statusBar": "Status bar"
+      }
+    }
   },
   "terminal": {
     "status": {
@@ -240,7 +254,9 @@
     },
     "drop": {
       "sameSide": "Drop on the opposite pane to transfer files",
-      "notConnected": "Not connected — reconnect to transfer files"
+      "notConnected": "Not connected — reconnect to transfer files",
+      "foldersNotSupported": "Folders can't be dropped in from outside the app ({{count}}) — drop a file instead or use the local pane",
+      "osDropTooLarge": "{{name}} is too large to upload via drag-and-drop from outside the app"
     },
     "shortcuts": {
       "refresh": "Refresh file panes",
@@ -425,7 +441,8 @@
       "editorLaunchFailed": "Failed to launch editor",
       "pathEmpty": "Path is empty",
       "homeNotFound": "Home directory not found",
-      "keyFileNotFound": "Key file not found: {{path}}"
+      "keyFileNotFound": "Key file not found: {{path}}",
+      "stageUploadFailed": "Failed to prepare the file for upload"
     },
     "settings": {
       "unsupportedSchema": "Unsupported settings schema version",

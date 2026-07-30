@@ -86,6 +86,7 @@
     "back": "Back",
     "groups": {
       "general": "General",
+      "appearance": "外观",
       "terminal": "Terminal",
       "connections": "Connections",
       "passwordManager": "Password manager",
@@ -130,7 +131,20 @@
     "editorPath": "默认编辑器（可选）",
     "editorPlaceholder": "留空 — 使用系统默认应用",
     "sshPort": "默认 SSH 端口",
-    "ftpPort": "默认 FTP 端口"
+    "ftpPort": "默认 FTP 端口",
+    "appearance": {
+      "transparencyEnabled": "启用窗口透明",
+      "transparencyHint": "使窗口透明且不模糊——后面的内容依然清晰可读，类似经典 Windows 控制台的透明效果。",
+      "windowOpacity": "整体不透明度",
+      "perPanelEnabled": "为每个面板单独设置透明度",
+      "perPanelHint": "为每个面板设置独立的数值，而不是使用统一的数值。",
+      "panels": {
+        "sidebar": "侧边栏",
+        "panel": "终端/文件面板",
+        "tabBar": "标签栏",
+        "statusBar": "状态栏"
+      }
+    }
   },
   "terminal": {
     "status": {
@@ -329,7 +343,8 @@
       "editorLaunchFailed": "无法启动编辑器",
       "pathEmpty": "路径为空",
       "homeNotFound": "未找到主目录",
-      "keyFileNotFound": "密钥文件未找到：{{path}}"
+      "keyFileNotFound": "密钥文件未找到：{{path}}",
+      "stageUploadFailed": "无法准备要上传的文件"
     },
     "settings": {
       "unsupportedSchema": "不支持的设置架构版本",

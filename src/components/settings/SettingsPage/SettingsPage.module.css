@@ -242,6 +242,50 @@
   color: var(--color-text-muted);
 }
 
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.checkboxRow input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.checkboxRow input[type='checkbox']:disabled {
+  cursor: not-allowed;
+}
+
+.rangeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rangeRow input[type='range'] {
+  flex: 1;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.rangeRow input[type='range']:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.rangeValue {
+  min-width: 42px;
+  text-align: right;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
 .actions {
   display: flex;
   gap: 8px;

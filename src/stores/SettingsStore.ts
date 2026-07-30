@@ -16,6 +16,7 @@ import type { AppStore } from './AppStore';
 
 export type SettingsGroup =
   | 'general'
+  | 'appearance'
   | 'terminal'
   | 'connections'
   | 'passwordManager'
@@ -84,6 +85,7 @@ export class SettingsStore {
         this.isLoading = false;
         this.applyTheme();
         this.applySidebarWidth();
+        this.applyOpacity();
         void this.applyLocale();
       });
     } catch (e) {
@@ -92,6 +94,7 @@ export class SettingsStore {
         this.isLoading = false;
         this.applyTheme();
         this.applySidebarWidth();
+        this.applyOpacity();
         void this.applyLocale();
       });
       console.error('[SettingsStore] load failed:', e);
@@ -131,6 +134,7 @@ export class SettingsStore {
         this.error = null;
         this.applyTheme();
         this.applySidebarWidth();
+        this.applyOpacity();
         void this.applyLocale();
       });
     } catch (e) {
@@ -150,6 +154,20 @@ export class SettingsStore {
 
   applyTheme() {
     document.documentElement.dataset.theme = this.settings.theme;
+  }
+
+  applyOpacity() {
+    const { transparencyEnabled, perPanelOpacityEnabled, opacity } = this.settings;
+    const root = document.documentElement.style;
+    const windowAlpha = transparencyEnabled ? opacity.window / 100 : 1;
+    const panelAlpha = (value: number) =>
+      !transparencyEnabled ? 1 : perPanelOpacityEnabled ? value / 100 : windowAlpha;
+
+    root.setProperty('--opacity-window', String(windowAlpha));
+    root.setProperty('--opacity-sidebar', String(panelAlpha(opacity.sidebar)));
+    root.setProperty('--opacity-panel', String(panelAlpha(opacity.panel)));
+    root.setProperty('--opacity-tabbar', String(panelAlpha(opacity.tabBar)));
+    root.setProperty('--opacity-statusbar', String(panelAlpha(opacity.statusBar)));
   }
 
   applySidebarWidth() {

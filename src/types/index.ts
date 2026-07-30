@@ -54,6 +54,11 @@ export { sftpEntrySchema } from './sftp';
 
 export type { ListDirResponse, RecursiveFileEntry, SftpEntry } from './sftp';
 
-export { appSettingsSchema, defaultAppSettings } from './settings';
+export {
+  appSettingsSchema,
+  defaultAppSettings,
+  OPACITY_MIN,
+  OPACITY_MAX,
+} from './settings';
 
-export type { AppSettings } from './settings';
+export type { AppSettings, PanelOpacity } from './settings';

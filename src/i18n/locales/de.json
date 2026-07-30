@@ -86,6 +86,7 @@
     "back": "Back",
     "groups": {
       "general": "General",
+      "appearance": "Erscheinungsbild",
       "terminal": "Terminal",
       "connections": "Connections",
       "passwordManager": "Password manager",
@@ -130,7 +131,20 @@
     "editorPath": "Standard-Editor (optional)",
     "editorPlaceholder": "Leer — Systemstandard-Anwendung",
     "sshPort": "Standard-SSH-Port",
-    "ftpPort": "Standard-FTP-Port"
+    "ftpPort": "Standard-FTP-Port",
+    "appearance": {
+      "transparencyEnabled": "Fenstertransparenz aktivieren",
+      "transparencyHint": "Macht das Fenster durchsichtig, ohne es weichzuzeichnen — Inhalte dahinter bleiben scharf lesbar, wie bei der klassischen Windows-Konsolentransparenz.",
+      "windowOpacity": "Gesamtdeckkraft",
+      "perPanelEnabled": "Deckkraft pro Panel anpassen",
+      "perPanelHint": "Für jedes Panel einen eigenen Wert statt eines gemeinsamen Werts festlegen.",
+      "panels": {
+        "sidebar": "Seitenleiste",
+        "panel": "Terminal-/Dateipanel",
+        "tabBar": "Tableiste",
+        "statusBar": "Statusleiste"
+      }
+    }
   },
   "terminal": {
     "status": {
@@ -327,7 +341,8 @@
       "editorLaunchFailed": "Editor konnte nicht gestartet werden",
       "pathEmpty": "Pfad ist leer",
       "homeNotFound": "Home-Verzeichnis nicht gefunden",
-      "keyFileNotFound": "Schlüsseldatei nicht gefunden: {{path}}"
+      "keyFileNotFound": "Schlüsseldatei nicht gefunden: {{path}}",
+      "stageUploadFailed": "Datei konnte nicht für den Upload vorbereitet werden"
     },
     "settings": {
       "unsupportedSchema": "Nicht unterstützte Einstellungsschema-Version",

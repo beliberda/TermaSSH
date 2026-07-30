@@ -6,6 +6,7 @@ import { useStores } from '@stores/index';
 import type { AppSettings } from '@/types';
 import type { SettingsGroup } from '@stores/SettingsStore';
 import { SettingsGeneralSection } from './sections/SettingsGeneralSection';
+import { SettingsAppearanceSection } from './sections/SettingsAppearanceSection';
 import { SettingsTerminalSection } from './sections/SettingsTerminalSection';
 import { SettingsConnectionsSection } from './sections/SettingsConnectionsSection';
 import { SettingsPasswordManagerSection } from './sections/SettingsPasswordManagerSection';
@@ -14,6 +15,7 @@ import styles from './SettingsPage.module.css';
 
 const GROUPS: SettingsGroup[] = [
   'general',
+  'appearance',
   'terminal',
   'connections',
   'shortcuts',
@@ -65,6 +67,8 @@ export const SettingsPage = observer(function SettingsPage() {
     switch (settingsStore.activeGroup) {
       case 'general':
         return <SettingsGeneralSection values={values} onChange={update} />;
+      case 'appearance':
+        return <SettingsAppearanceSection values={values} onChange={update} />;
       case 'terminal':
         return <SettingsTerminalSection values={values} onChange={update} />;
       case 'connections':

@@ -17,6 +17,19 @@
   --color-accent-hover: #1a86d9;
   --color-tab-active: #1e1e1e;
   --color-tab-inactive: #2d2d2d;
+
+  --color-bg-rgb: 30, 30, 30;
+  --color-sidebar-bg-rgb: 37, 37, 38;
+  --color-tab-active-rgb: 30, 30, 30;
+  --color-tab-inactive-rgb: 45, 45, 45;
+
+  /* Degree of transparency per panel (0-1), driven by SettingsStore.applyOpacity().
+     Defaults to fully opaque so the app looks unchanged until transparency is enabled. */
+  --opacity-window: 1;
+  --opacity-sidebar: 1;
+  --opacity-panel: 1;
+  --opacity-tabbar: 1;
+  --opacity-statusbar: 1;
 }
 
 :root[data-theme='light'] {
@@ -30,4 +43,9 @@
   --color-accent-hover: #1a86d9;
   --color-tab-active: #ffffff;
   --color-tab-inactive: #e0e0e0;
+
+  --color-bg-rgb: 243, 243, 243;
+  --color-sidebar-bg-rgb: 232, 232, 232;
+  --color-tab-active-rgb: 255, 255, 255;
+  --color-tab-inactive-rgb: 224, 224, 224;
 }
