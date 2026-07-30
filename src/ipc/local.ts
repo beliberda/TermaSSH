@@ -60,3 +60,13 @@ export async function localListRecursive(
 ): Promise<RecursiveLocalFile[]> {
   return safeInvoke<RecursiveLocalFile[]>("local_list_recursive", { path });
 }
+
+export async function localStageUpload(
+  fileName: string,
+  dataBase64: string,
+): Promise<string> {
+  return safeInvoke<string>("local_stage_upload", {
+    fileName,
+    dataBase64,
+  });
+}

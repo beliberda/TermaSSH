@@ -27,6 +27,8 @@ export interface TransferTask {
   bytesDone: number;
   bytesTotal: number;
   error?: string;
+  /** Delete localPath once this task settles (e.g. it's a staged copy of a file dropped in from outside the app). */
+  cleanupLocalAfter?: boolean;
 }
 
 export interface FileConflictInfo {

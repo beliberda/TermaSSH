@@ -75,6 +75,15 @@ pub async fn sftp_upload(
     remote_path: String,
     transfer_id: Option<String>,
 ) -> IpcResult<()> {
+    let started = std::time::Instant::now();
+    tracing::info!(
+        connection_id = %connection_id,
+        local_path = %local_path,
+        remote_path = %remote_path,
+        transfer_id = transfer_id.as_deref().unwrap_or(""),
+        "upload started"
+    );
+
     let cancel: Option<&TransferCancelRegistry> = transfer_id
         .as_deref()
         .map(|_| cancel_registry.as_ref());
@@ -83,7 +92,7 @@ pub async fn sftp_upload(
         pool.transfer_context(&connection_id)?
     };
 
-    match ctx {
+    let result = match ctx {
         TransferContext::Ssh { transfer_pool, .. } => {
             crate::services::sftp::upload_file_via_pool(
                 &transfer_pool,
@@ -108,7 +117,27 @@ pub async fn sftp_upload(
             )
             .await
         }
+    };
+
+    match &result {
+        Ok(()) => tracing::info!(
+            connection_id = %connection_id,
+            local_path = %local_path,
+            remote_path = %remote_path,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "upload finished"
+        ),
+        Err(err) => tracing::error!(
+            connection_id = %connection_id,
+            local_path = %local_path,
+            remote_path = %remote_path,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            error = %err,
+            "upload failed"
+        ),
     }
+
+    result
 }
 
 #[tauri::command]

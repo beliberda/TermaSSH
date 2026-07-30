@@ -4,6 +4,7 @@ import { observer } from 'mobx-react-lite';
 import { useTranslation } from 'react-i18next';
 import { notify } from '@/notify';
 import { useStores } from '@stores/index';
+import { MAX_OS_DROP_UPLOAD_BYTES } from '@stores/TransferStore';
 import { FileTransferToolbar } from '@components/fileTransfer/FileTransferToolbar/FileTransferToolbar';
 import { FilePane } from '@components/fileTransfer/FilePane/FilePane';
 import { PaneResizeHandle } from '@components/fileTransfer/PaneResizeHandle/PaneResizeHandle';
@@ -39,6 +40,13 @@ function payloadToEntries(data: DragPayload) {
     size: data.sizes[i] ?? 0,
     modifiedAt: data.modifiedAts[i] || undefined,
   }));
+}
+
+// During dragover/dragenter, browsers only expose `types` (e.g. "Files") for
+// an OS file drag, not the files themselves - actual File objects are only
+// readable once the drop happens.
+function isOsFileDrag(e: DragEvent): boolean {
+  return Array.from(e.dataTransfer.types).includes('Files');
 }
 
 export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
@@ -117,12 +125,26 @@ export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
 
   const allowDrop = (e: DragEvent, target: 'local' | 'remote') => {
     e.preventDefault();
-    if (!dragSourceSide.current || !isValidDropTarget(target)) {
-      e.dataTransfer.dropEffect = 'none';
+
+    if (dragSourceSide.current) {
+      if (!isValidDropTarget(target)) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      e.dataTransfer.dropEffect = 'copy';
+      setDropTarget(target);
       return;
     }
-    e.dataTransfer.dropEffect = 'copy';
-    setDropTarget(target);
+
+    // No internal drag in progress - this can only be an OS file drag.
+    // Uploading only makes sense on the remote pane.
+    if (target === 'remote' && isOsFileDrag(e)) {
+      e.dataTransfer.dropEffect = 'copy';
+      setDropTarget(target);
+      return;
+    }
+
+    e.dataTransfer.dropEffect = 'none';
   };
 
   const handleDragLeave = (e: DragEvent) => {
@@ -135,18 +157,65 @@ export const FileTransferWorkspace = observer(function FileTransferWorkspace() {
     e.preventDefault();
     setDropTarget(null);
     const data = parseDragData(e);
-    if (!data || data.side !== 'local') {
-      if (data?.side === 'remote') {
-        notify.info(t('fileTransfer.drop.sameSide'));
+
+    if (data) {
+      if (data.side !== 'local') {
+        if (data.side === 'remote') {
+          notify.info(t('fileTransfer.drop.sameSide'));
+        }
+        return;
       }
+      if (!remoteBrowserStore.connectionId) {
+        notify.warning(t('fileTransfer.drop.notConnected'));
+        return;
+      }
+      void transferStore.enqueueUpload(
+        payloadToEntries(data),
+        remoteBrowserStore.cwd,
+        remoteBrowserStore.connectionId,
+      );
       return;
     }
+
+    // No internal drag payload - this is files dropped in from outside
+    // the app (e.g. Windows Explorer). Folders show up here too but as
+    // unreadable zero-byte Files, so filter them out via webkitGetAsEntry
+    // rather than silently uploading an empty file named after the folder.
+    const files: File[] = [];
+    let skippedDirs = 0;
+    for (const item of Array.from(e.dataTransfer.items)) {
+      if (item.kind !== 'file') continue;
+      const entry = item.webkitGetAsEntry?.();
+      if (entry?.isDirectory) {
+        skippedDirs++;
+        continue;
+      }
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+
+    if (skippedDirs > 0) {
+      notify.warning(
+        t('fileTransfer.drop.foldersNotSupported', { count: skippedDirs }),
+      );
+    }
+
+    const uploadable: File[] = [];
+    for (const file of files) {
+      if (file.size > MAX_OS_DROP_UPLOAD_BYTES) {
+        notify.warning(t('fileTransfer.drop.osDropTooLarge', { name: file.name }));
+        continue;
+      }
+      uploadable.push(file);
+    }
+    if (uploadable.length === 0) return;
+
     if (!remoteBrowserStore.connectionId) {
       notify.warning(t('fileTransfer.drop.notConnected'));
       return;
     }
-    void transferStore.enqueueUpload(
-      payloadToEntries(data),
+    void transferStore.enqueueOsUpload(
+      uploadable,
       remoteBrowserStore.cwd,
       remoteBrowserStore.connectionId,
     );

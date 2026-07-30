@@ -12,10 +12,18 @@ import * as transferIpc from '@ipc/transfer';
 import { getIpcErrorPayload } from '@ipc/client';
 import { listenTransferProgress } from '@ipc/events';
 import { joinLocalPath, joinRemotePath } from '@utils/filePaths';
+import { bytesToBase64 } from '@utils/base64';
 import type { LocalBrowserStore } from './LocalBrowserStore';
 import type { RemoteBrowserStore } from './RemoteBrowserStore';
 import type { SessionStore } from './SessionStore';
 import type { SettingsStore } from './SettingsStore';
+
+// Files dropped in from outside the app (e.g. Explorer) go through the
+// browser File API: read into memory, base64'd across IPC, staged to disk,
+// then uploaded through the normal path-based pipeline. That round trip
+// isn't something we want for huge files, so cap it well below what people
+// would drag in as a convenience rather than a bulk transfer.
+export const MAX_OS_DROP_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 export interface PreparingDownload {
   remotePath: string;
@@ -287,6 +295,78 @@ export class TransferStore {
     runInAction(() => {
       this.tasks.push(...newTasks);
     });
+    void this.processQueue();
+  }
+
+  /**
+   * Files dropped onto the remote pane from outside the app. Unlike
+   * enqueueUpload these have no real local path yet, so each one is spooled
+   * to a temp file via local_stage_upload before joining the normal queue;
+   * cleanupLocalAfter marks the task to remove that temp copy once it settles.
+   */
+  async enqueueOsUpload(
+    files: File[],
+    remoteDir: string,
+    connectionId: string,
+  ) {
+    for (const file of files) {
+      const prepareKey = `${file.name}:${file.size}:${crypto.randomUUID()}`;
+      runInAction(() => {
+        this.preparingUploads.set(prepareKey, {
+          localPath: file.name,
+          label: file.name,
+        });
+      });
+
+      try {
+        if (file.size > MAX_OS_DROP_UPLOAD_BYTES) {
+          throw new Error(
+            `File too large for drag-and-drop upload (max ${Math.floor(MAX_OS_DROP_UPLOAD_BYTES / (1024 * 1024))} MB)`,
+          );
+        }
+
+        const buffer = new Uint8Array(await file.arrayBuffer());
+        const base64 = bytesToBase64(buffer);
+        const stagedPath = await localIpc.localStageUpload(file.name, base64);
+
+        runInAction(() => {
+          this.tasks.push({
+            id: crypto.randomUUID(),
+            connectionId,
+            fileName: file.name,
+            direction: 'upload',
+            localPath: stagedPath,
+            remotePath: joinRemotePath(remoteDir, file.name),
+            isDirectory: false,
+            status: 'queued',
+            bytesDone: 0,
+            bytesTotal: file.size,
+            cleanupLocalAfter: true,
+          });
+        });
+      } catch (e) {
+        runInAction(() => {
+          this.tasks.push({
+            id: crypto.randomUUID(),
+            connectionId,
+            fileName: file.name,
+            direction: 'upload',
+            localPath: file.name,
+            remotePath: joinRemotePath(remoteDir, file.name),
+            isDirectory: false,
+            status: 'error',
+            bytesDone: 0,
+            bytesTotal: file.size,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        });
+      } finally {
+        runInAction(() => {
+          this.preparingUploads.delete(prepareKey);
+        });
+      }
+    }
+
     void this.processQueue();
   }
 
@@ -571,6 +651,16 @@ export class TransferStore {
   }
 
   private async runTask(task: TransferTask) {
+    try {
+      await this.runTaskBody(task);
+    } finally {
+      if (task.cleanupLocalAfter) {
+        localIpc.localDelete(task.localPath, false).catch(() => {});
+      }
+    }
+  }
+
+  private async runTaskBody(task: TransferTask) {
     if (this.cancelledIds.has(task.id)) {
       runInAction(() => {
         task.status = 'cancelled';
