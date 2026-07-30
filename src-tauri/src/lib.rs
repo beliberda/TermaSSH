@@ -20,26 +20,51 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 fn init_tracing(app: &tauri::AppHandle) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    if cfg!(debug_assertions) {
-        if let Ok(dir) = app.path().app_data_dir() {
-            let log_dir = dir.join("logs");
-            let _ = std::fs::create_dir_all(&log_dir);
-            let file_appender = tracing_appender::rolling::never(&log_dir, "termassh.log");
-            let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-            tracing_subscriber::registry()
-                .with(filter)
-                .with(tracing_subscriber::fmt::layer())
-                .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
-                .init();
-            std::mem::forget(_guard);
-            return;
-        }
+    // File logging is intentionally not gated behind debug_assertions: the
+    // whole point is that a user hitting a crash in a real (release) build
+    // can send us termassh.log. rolling::never means this file is appended
+    // to forever across restarts, so always check the *end* of the file for
+    // the most recent run, not the top.
+    if let Ok(dir) = app.path().app_data_dir() {
+        let log_dir = dir.join("logs");
+        let _ = std::fs::create_dir_all(&log_dir);
+        let file_appender = tracing_appender::rolling::never(&log_dir, "termassh.log");
+        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(non_blocking),
+            )
+            .init();
+        std::mem::forget(_guard);
+        install_panic_logging_hook();
+        return;
     }
 
     tracing_subscriber::registry()
         .with(filter)
         .with(tracing_subscriber::fmt::layer())
         .init();
+    install_panic_logging_hook();
+}
+
+/// Makes sure a Rust panic (e.g. a stray unwrap/index-out-of-bounds deep in
+/// a transfer) is recorded in termassh.log before the default hook runs,
+/// instead of only ever showing up as a silent task failure or a window that
+/// disappears with no trace of why.
+fn install_panic_logging_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        tracing::error!(panic.location = %location, "PANIC: {info}");
+        default_hook(info);
+    }));
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -107,6 +132,8 @@ pub fn run() {
             commands::local_fs::local_home_dir,
             commands::local_fs::local_list_recursive,
             commands::local_fs::local_reveal_in_explorer,
+            commands::local_fs::local_stage_upload,
+            commands::log::frontend_log_error,
             commands::open::open_in_editor,
             commands::transfer::transfer_cancel,
             commands::transfer::transfer_cancel_all,
