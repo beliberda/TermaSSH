@@ -111,6 +111,8 @@ pub fn run() {
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
             commands::terminal::test_ssh_connect,
+            commands::local_shell::local_shell_list,
+            commands::local_shell::local_shell_connect,
             commands::ftp::ftp_connect,
             commands::ftp::ftp_disconnect,
             commands::sftp::sftp_list_dir,

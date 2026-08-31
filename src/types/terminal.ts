@@ -20,9 +20,15 @@ export const terminalOutputPayloadSchema = z.object({
 
 export type WorkspaceView = 'terminal' | 'files';
 
+export type TerminalTabKind = 'ssh' | 'local';
+
 export interface TerminalTab {
   id: string;
-  sessionId: string;
+  kind: TerminalTabKind;
+  /** Set for kind 'ssh' — the saved session this tab connects to. */
+  sessionId?: string;
+  /** Set for kind 'local' — the shell id passed to local_shell_connect. */
+  shellId?: string;
   connectionId?: string;
   title: string;
   status: ConnectionStatus;
@@ -31,6 +37,11 @@ export interface TerminalTab {
   connectLatencyMs?: number;
   reconnecting?: boolean;
   workspaceView?: WorkspaceView;
+}
+
+export interface ShellInfo {
+  id: string;
+  label: string;
 }
 
 export type ConnectionStatusPayload = z.infer<typeof connectionStatusPayloadSchema>;

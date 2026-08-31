@@ -173,7 +173,20 @@
     "tabs": {
       "empty": "没有打开的标签页",
       "close": "关闭",
-      "closeTab": "关闭 {{title}}"
+      "closeTab": "关闭 {{title}}",
+      "newConsole": "新建控制台"
+    },
+    "consoles": {
+      "cmd": "命令提示符",
+      "powershell": "Windows PowerShell",
+      "pwsh": "PowerShell 7",
+      "gitbash": "Git Bash",
+      "wsl": "WSL",
+      "bash": "Bash",
+      "zsh": "Zsh",
+      "sh": "Shell",
+      "fish": "Fish",
+      "empty": "未找到本地 shell"
     }
   },
   "files": {
@@ -183,6 +196,7 @@
     "ftpConnecting": "正在通过 FTP 连接...",
     "ftpError": "FTP 连接错误",
     "noSession": "连接 SSH 或 FTP 会话以浏览文件",
+    "localConsole": "本地控制台不支持文件浏览",
     "connecting": "连接中...",
     "notConnected": "会话未连接",
     "updating": "更新中...",
@@ -282,7 +296,14 @@
       "writeNotSupported": "FTP 连接不支持写入",
       "resizeNotSupported": "FTP 连接不支持调整大小",
       "sendDataFailed": "发送数据失败",
-      "resizeFailed": "调整大小失败"
+      "resizeFailed": "调整大小失败",
+      "notSupported": "此连接不支持该操作"
+    },
+    "localShell": {
+      "notFound": "未找到 shell 可执行文件",
+      "unknownType": "未知的控制台类型：{{shellId}}",
+      "ptyFailed": "无法打开本地控制台",
+      "spawnFailed": "无法启动 shell 进程"
     },
     "ssh": {
       "passwordRequired": "需要密码",

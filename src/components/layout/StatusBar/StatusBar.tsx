@@ -48,11 +48,15 @@ export const StatusBar = observer(function StatusBar() {
     status = tab?.status ?? 'disconnected';
     latency = tab?.connectLatencyMs;
   } else if (terminalStore.activeTab) {
-    const session = sessionStore.sessions.find(
-      (s) => s.id === terminalStore.activeTab!.sessionId,
-    );
-    if (session) {
-      host = `${session.username}@${session.host}:${session.port}`;
+    if (terminalStore.activeTab.kind === 'local') {
+      host = terminalStore.activeTab.title;
+    } else {
+      const session = sessionStore.sessions.find(
+        (s) => s.id === terminalStore.activeTab!.sessionId,
+      );
+      if (session) {
+        host = `${session.username}@${session.host}:${session.port}`;
+      }
     }
     status = terminalStore.activeTab.status;
     latency = terminalStore.activeTab.connectLatencyMs;

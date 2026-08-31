@@ -1,9 +1,65 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useTranslation } from 'react-i18next';
 import { useStores } from '@stores/index';
-import type { ConnectionStatus } from '@/types';
+import type { ConnectionStatus, ShellInfo } from '@/types';
+import { AnchorPopup } from '@components/ui/AnchorPopup/AnchorPopup';
+import menuStyles from '@components/ui/AnchorPopup/AnchorPopup.module.css';
+import * as terminalIpc from '@ipc/terminal';
 import styles from './ConnectionTabBar.module.css';
+
+const NewConsoleMenu = observer(function NewConsoleMenu() {
+  const { t } = useTranslation();
+  const { terminalStore } = useStores();
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [shells, setShells] = useState<ShellInfo[] | null>(null);
+
+  const openMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setAnchor({ x: rect.left, y: rect.bottom });
+    void terminalIpc.localShellList().then(setShells);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className={styles.newConsoleBtn}
+        title={t('terminal.tabs.newConsole')}
+        aria-haspopup="menu"
+        onClick={openMenu}
+      >
+        +
+      </button>
+      {anchor && (
+        <AnchorPopup anchor={anchor} onClose={() => setAnchor(null)}>
+          {shells === null && (
+            <span className={menuStyles.menuItem}>{t('common.loading')}</span>
+          )}
+          {shells?.length === 0 && (
+            <span className={menuStyles.menuItem}>{t('terminal.consoles.empty')}</span>
+          )}
+          {shells?.map((shell) => (
+            <button
+              key={shell.id}
+              type="button"
+              className={menuStyles.menuItem}
+              onClick={() => {
+                void terminalStore.openLocalShellTab(
+                  shell.id,
+                  t(`terminal.consoles.${shell.id}`, { defaultValue: shell.label }),
+                );
+                setAnchor(null);
+              }}
+            >
+              {t(`terminal.consoles.${shell.id}`, { defaultValue: shell.label })}
+            </button>
+          ))}
+        </AnchorPopup>
+      )}
+    </>
+  );
+});
 
 function statusClass(status: ConnectionStatus): string {
   switch (status) {
@@ -44,6 +100,7 @@ export const ConnectionTabBar = observer(function ConnectionTabBar() {
     return (
       <div className={styles.tabBar}>
         <span className={styles.empty}>{t('terminal.tabs.empty')}</span>
+        <NewConsoleMenu />
       </div>
     );
   }
@@ -140,6 +197,7 @@ export const ConnectionTabBar = observer(function ConnectionTabBar() {
           </div>
         );
       })}
+      <NewConsoleMenu />
     </div>
   );
 });

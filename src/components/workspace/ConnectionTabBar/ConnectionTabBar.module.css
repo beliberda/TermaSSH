@@ -122,3 +122,24 @@
   background: #5a1d1d;
   color: #f48771;
 }
+
+.newConsoleBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  align-self: stretch;
+  flex-shrink: 0;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.newConsoleBtn:hover {
+  background: rgba(var(--color-sidebar-bg-rgb), var(--opacity-tabbar));
+  color: var(--color-text);
+}

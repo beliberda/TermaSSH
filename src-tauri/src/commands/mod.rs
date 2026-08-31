@@ -2,6 +2,7 @@ pub mod config;
 pub mod credentials;
 pub mod ftp;
 pub mod local_fs;
+pub mod local_shell;
 pub mod log;
 pub mod open;
 pub mod ping;

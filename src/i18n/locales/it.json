@@ -173,7 +173,20 @@
     "tabs": {
       "empty": "Nessuna scheda aperta",
       "close": "Chiudi",
-      "closeTab": "Chiudi {{title}}"
+      "closeTab": "Chiudi {{title}}",
+      "newConsole": "Nuova console"
+    },
+    "consoles": {
+      "cmd": "Prompt dei comandi",
+      "powershell": "Windows PowerShell",
+      "pwsh": "PowerShell 7",
+      "gitbash": "Git Bash",
+      "wsl": "WSL",
+      "bash": "Bash",
+      "zsh": "Zsh",
+      "sh": "Shell",
+      "fish": "Fish",
+      "empty": "Nessuna shell locale trovata"
     }
   },
   "files": {
@@ -183,6 +196,7 @@
     "ftpConnecting": "Connessione FTP in corso...",
     "ftpError": "Errore connessione FTP",
     "noSession": "Connetti una sessione SSH o FTP per sfogliare i file",
+    "localConsole": "Il browser dei file non è disponibile per una console locale",
     "connecting": "Connessione...",
     "notConnected": "Sessione non connessa",
     "updating": "Aggiornamento...",
@@ -282,7 +296,14 @@
       "writeNotSupported": "Scrittura non supportata per connessioni FTP",
       "resizeNotSupported": "Ridimensionamento non supportato per connessioni FTP",
       "sendDataFailed": "Invio dati fallito",
-      "resizeFailed": "Ridimensionamento fallito"
+      "resizeFailed": "Ridimensionamento fallito",
+      "notSupported": "Non supportato per questa connessione"
+    },
+    "localShell": {
+      "notFound": "Eseguibile della shell non trovato",
+      "unknownType": "Tipo di console sconosciuto: {{shellId}}",
+      "ptyFailed": "Impossibile aprire una console locale",
+      "spawnFailed": "Impossibile avviare il processo della shell"
     },
     "ssh": {
       "passwordRequired": "Password richiesta",

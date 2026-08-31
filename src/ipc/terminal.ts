@@ -1,3 +1,4 @@
+import type { ShellInfo } from '@/types';
 import { safeInvoke } from './client';
 
 export interface ConnectResponse {
@@ -35,4 +36,12 @@ export async function terminalResize(
     cols,
     rows,
   });
+}
+
+export async function localShellList(): Promise<ShellInfo[]> {
+  return safeInvoke<ShellInfo[]>('local_shell_list');
+}
+
+export async function localShellConnect(shellId: string): Promise<ConnectResponse> {
+  return safeInvoke<ConnectResponse>('local_shell_connect', { shellId });
 }

@@ -187,7 +187,20 @@
     "tabs": {
       "empty": "Нет открытых вкладок",
       "close": "Закрыть",
-      "closeTab": "Закрыть {{title}}"
+      "closeTab": "Закрыть {{title}}",
+      "newConsole": "Новая консоль"
+    },
+    "consoles": {
+      "cmd": "Командная строка",
+      "powershell": "Windows PowerShell",
+      "pwsh": "PowerShell 7",
+      "gitbash": "Git Bash",
+      "wsl": "WSL",
+      "bash": "Bash",
+      "zsh": "Zsh",
+      "sh": "Shell",
+      "fish": "Fish",
+      "empty": "Локальные консоли не найдены"
     }
   },
   "files": {
@@ -197,6 +210,7 @@
     "ftpConnecting": "Подключение по FTP...",
     "ftpError": "Ошибка FTP-подключения",
     "noSession": "Подключите SSH или FTP сессию, чтобы просматривать файлы",
+    "localConsole": "Файловый менеджер недоступен для локальной консоли",
     "connecting": "Подключение...",
     "notConnected": "Сессия не подключена",
     "updating": "Обновление...",
@@ -378,7 +392,14 @@
       "writeNotSupported": "Запись не поддерживается для FTP-подключений",
       "resizeNotSupported": "Изменение размера не поддерживается для FTP-подключений",
       "sendDataFailed": "Не удалось отправить данные",
-      "resizeFailed": "Не удалось изменить размер"
+      "resizeFailed": "Не удалось изменить размер",
+      "notSupported": "Не поддерживается для этого подключения"
+    },
+    "localShell": {
+      "notFound": "Исполняемый файл консоли не найден",
+      "unknownType": "Неизвестный тип консоли: {{shellId}}",
+      "ptyFailed": "Не удалось открыть локальную консоль",
+      "spawnFailed": "Не удалось запустить процесс консоли"
     },
     "ssh": {
       "passwordRequired": "Требуется пароль",

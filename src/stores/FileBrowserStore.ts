@@ -125,7 +125,7 @@ export class FileBrowserStore {
     }
 
     const activeTab = terminalStore.activeTab;
-    if (!activeTab) {
+    if (!activeTab || activeTab.kind === 'local') {
       this.reset();
       return;
     }
@@ -140,7 +140,7 @@ export class FileBrowserStore {
     if (activeTab.status !== 'connected' || !activeTab.connectionId) {
       runInAction(() => {
         this.connectionId = activeTab.connectionId ?? null;
-        this.sessionId = activeTab.sessionId;
+        this.sessionId = activeTab.sessionId ?? null;
         this.entries = [];
         this.selectedEntry = null;
         if (activeTab.status !== 'connecting') {
@@ -164,7 +164,7 @@ export class FileBrowserStore {
 
     runInAction(() => {
       this.connectionId = activeTab.connectionId!;
-      this.sessionId = activeTab.sessionId;
+      this.sessionId = activeTab.sessionId ?? null;
       this.connectionStatus = activeTab.status;
       this.protocol = session?.protocol === 'sftp' ? 'sftp' : 'ssh';
       if (connectionChanged) {
@@ -229,7 +229,7 @@ export class FileBrowserStore {
 
     runInAction(() => {
       this.connectionId = activeTab.connectionId ?? null;
-      this.sessionId = activeTab.sessionId;
+      this.sessionId = activeTab.sessionId ?? null;
       this.connectionStatus = activeTab.status;
       this.protocol = session?.protocol === 'sftp' ? 'sftp' : 'ssh';
       this.cwd = defaultPath;

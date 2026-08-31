@@ -90,9 +90,10 @@ export class TerminalStore {
   }
 
   private resolveSession(
-    sessionId: string,
+    sessionId: string | undefined,
     session?: SessionConfig,
   ): SessionConfig | undefined {
+    if (!sessionId) return session;
     return session ?? this.sessionStore?.getSessionById(sessionId);
   }
 
@@ -213,6 +214,7 @@ export class TerminalStore {
 
     const tab: TerminalTab = {
       id: tabId,
+      kind: 'ssh',
       sessionId,
       title,
       status: 'connecting',
@@ -231,12 +233,90 @@ export class TerminalStore {
     await this.connectTab(tabId, sessionId, password, resolved);
   }
 
+  async openLocalShellTab(shellId: string, label: string) {
+    const tabId = crypto.randomUUID();
+
+    const tab: TerminalTab = {
+      id: tabId,
+      kind: 'local',
+      shellId,
+      title: label,
+      status: 'connecting',
+      connectStartedAt: performance.now(),
+      workspaceView: 'terminal',
+    };
+
+    runInAction(() => {
+      this.tabs.push(tab);
+      this.activeTabId = tabId;
+      this.workspaceStore?.setActiveTerminalTab(tabId);
+    });
+
+    await this.connectLocalTab(tabId, shellId);
+  }
+
+  private async connectLocalTab(tabId: string, shellId: string) {
+    try {
+      const { connectionId } = await terminalIpc.localShellConnect(shellId);
+      const tabStillOpen = this.tabs.some((x) => x.id === tabId);
+      if (!tabStillOpen) {
+        void terminalIpc.terminalDisconnect(connectionId).catch((err) => {
+          console.error('[TerminalStore] orphan disconnect failed:', err);
+        });
+        return;
+      }
+      runInAction(() => {
+        const t = this.tabs.find((x) => x.id === tabId);
+        if (t) {
+          t.connectionId = connectionId;
+          t.reconnecting = false;
+        }
+      });
+    } catch (e) {
+      const error = getIpcErrorPayload(e);
+      runInAction(() => {
+        const t = this.tabs.find((x) => x.id === tabId);
+        if (t) {
+          t.connectionId = undefined;
+          t.status = 'error';
+          t.error = error;
+          t.reconnecting = false;
+        }
+      });
+    }
+  }
+
   async reconnectTab(tabId: string, password?: string) {
     const tab = this.tabs.find((t) => t.id === tabId);
     if (!tab || !this.canReconnect(tab)) return;
 
+    if (tab.kind === 'local') {
+      const oldConnectionId = tab.connectionId;
+      if (oldConnectionId) {
+        void terminalIpc.terminalDisconnect(oldConnectionId).catch((e) => {
+          console.error('[TerminalStore] disconnect before reconnect failed:', e);
+        });
+      }
+
+      this.terminalHandles.get(tabId)?.clear();
+
+      runInAction(() => {
+        tab.status = 'connecting';
+        tab.connectionId = undefined;
+        tab.error = undefined;
+        tab.connectStartedAt = performance.now();
+        tab.reconnecting = true;
+        this.activeTabId = tabId;
+      });
+
+      await this.connectLocalTab(tabId, tab.shellId!);
+      return;
+    }
+
     await this.sessionStore?.flushPersist();
-    const resolved = this.resolveSession(tab.sessionId);
+    const sessionId = tab.sessionId;
+    if (!sessionId) return;
+    const resolved = this.resolveSession(sessionId);
     if (!resolved) {
       runInAction(() => {
         this.pendingConnect = null;
@@ -250,7 +330,7 @@ export class TerminalStore {
     if (resolved.authType === 'password' && !password) {
       if (!this.vaultStore?.isUnlocked) {
         runInAction(() => {
-          this.pendingConnect = { sessionId: tab.sessionId, reconnectTabId: tabId };
+          this.pendingConnect = { sessionId, reconnectTabId: tabId };
         });
         return;
       }
@@ -273,10 +353,10 @@ export class TerminalStore {
       tab.reconnecting = true;
       this.pendingConnect = null;
       this.activeTabId = tabId;
-      this.sessionStore?.selectSession(tab.sessionId);
+      this.sessionStore?.selectSession(sessionId);
     });
 
-    await this.connectTab(tabId, tab.sessionId, password, resolved, true);
+    await this.connectTab(tabId, sessionId, password, resolved, true);
   }
 
   private async connectTab(
@@ -382,7 +462,7 @@ export class TerminalStore {
 
   async closeTabsForMissingSessions(validSessionIds: Set<string>) {
     const orphanTabIds = this.tabs
-      .filter((tab) => !validSessionIds.has(tab.sessionId))
+      .filter((tab) => tab.sessionId !== undefined && !validSessionIds.has(tab.sessionId))
       .map((tab) => tab.id);
 
     for (const tabId of orphanTabIds) {
@@ -421,7 +501,9 @@ export class TerminalStore {
     runInAction(() => {
       this.activeTabId = tabId;
       if (tab) {
-        this.sessionStore?.selectSession(tab.sessionId);
+        if (tab.sessionId) {
+          this.sessionStore?.selectSession(tab.sessionId);
+        }
         this.workspaceStore?.setActiveTerminalTab(tabId);
       }
     });
@@ -481,22 +563,17 @@ export class TerminalStore {
           ) ??
           this.tabs.find((t) => !t.connectionId && t.status === 'connecting');
 
-        if (connectingTab) {
-          const session = this.resolveSession(connectingTab.sessionId);
+        if (connectingTab && connectingTab.sessionId) {
+          const sessionId = connectingTab.sessionId;
+          const session = this.resolveSession(sessionId);
           if (
             session &&
             shouldPromptPassphrase(session.authType, undefined, payload.error)
           ) {
             if (connectingTab.reconnecting) {
-              this.schedulePassphrasePromptReconnect(
-                connectingTab.sessionId,
-                connectingTab.id,
-              );
+              this.schedulePassphrasePromptReconnect(sessionId, connectingTab.id);
             } else {
-              this.schedulePassphrasePrompt(
-                connectingTab.sessionId,
-                connectingTab.id,
-              );
+              this.schedulePassphrasePrompt(sessionId, connectingTab.id);
             }
             return;
           }

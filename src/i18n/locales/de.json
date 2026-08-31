@@ -173,7 +173,20 @@
     "tabs": {
       "empty": "Keine offenen Tabs",
       "close": "Schließen",
-      "closeTab": "{{title}} schließen"
+      "closeTab": "{{title}} schließen",
+      "newConsole": "Neue Konsole"
+    },
+    "consoles": {
+      "cmd": "Eingabeaufforderung",
+      "powershell": "Windows PowerShell",
+      "pwsh": "PowerShell 7",
+      "gitbash": "Git Bash",
+      "wsl": "WSL",
+      "bash": "Bash",
+      "zsh": "Zsh",
+      "sh": "Shell",
+      "fish": "Fish",
+      "empty": "Keine lokalen Shells gefunden"
     }
   },
   "files": {
@@ -181,6 +194,7 @@
     "ftpConnecting": "FTP-Verbindung wird hergestellt...",
     "ftpError": "FTP-Verbindungsfehler",
     "noSession": "Verbinden Sie eine SSH- oder FTP-Sitzung, um Dateien zu durchsuchen",
+    "localConsole": "Dateibrowser ist für eine lokale Konsole nicht verfügbar",
     "connecting": "Verbinden...",
     "notConnected": "Sitzung nicht verbunden",
     "updating": "Aktualisieren...",
@@ -280,7 +294,14 @@
       "writeNotSupported": "Schreiben wird für FTP-Verbindungen nicht unterstützt",
       "resizeNotSupported": "Größenänderung wird für FTP-Verbindungen nicht unterstützt",
       "sendDataFailed": "Daten konnten nicht gesendet werden",
-      "resizeFailed": "Größenänderung fehlgeschlagen"
+      "resizeFailed": "Größenänderung fehlgeschlagen",
+      "notSupported": "Für diese Verbindung nicht unterstützt"
+    },
+    "localShell": {
+      "notFound": "Shell-Programm nicht gefunden",
+      "unknownType": "Unbekannter Konsolentyp: {{shellId}}",
+      "ptyFailed": "Lokale Konsole konnte nicht geöffnet werden",
+      "spawnFailed": "Shell-Prozess konnte nicht gestartet werden"
     },
     "ssh": {
       "passwordRequired": "Passwort erforderlich",

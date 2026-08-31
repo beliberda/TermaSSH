@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use portable_pty::MasterPty;
 use tauri::AppHandle;
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
@@ -10,6 +11,7 @@ use crate::events::emit_connection_status;
 use crate::models::sftp::{RecursiveFileEntry, SftpEntry};
 use crate::models::SessionConfig;
 use crate::services::ftp::{self, SharedFtpClient};
+use crate::services::local_shell::LocalShellSession;
 use crate::services::sftp::SftpSessionCache;
 use crate::services::sftp_transfer_pool::{
     SftpTransferPool, DEFAULT_MAX_CONCURRENT_TRANSFERS,
@@ -26,6 +28,13 @@ pub enum ConnectionKind {
     },
     Ftp {
         client: SharedFtpClient,
+    },
+    Local {
+        master: Box<dyn MasterPty + Send>,
+        child: Box<dyn portable_pty::Child + Send + Sync>,
+        input_tx: mpsc::UnboundedSender<Vec<u8>>,
+        reader_task: tokio::task::JoinHandle<()>,
+        writer_task: tokio::task::JoinHandle<()>,
     },
 }
 
@@ -101,6 +110,27 @@ impl ConnectionPool {
         );
     }
 
+    pub fn register_local(
+        &mut self,
+        connection_id: String,
+        shell_id: String,
+        session: LocalShellSession,
+    ) {
+        self.connections.insert(
+            connection_id,
+            ConnectionHandle {
+                session_id: format!("local:{shell_id}"),
+                kind: ConnectionKind::Local {
+                    master: session.master,
+                    child: session.child,
+                    input_tx: session.input_tx,
+                    reader_task: session.reader_task,
+                    writer_task: session.writer_task,
+                },
+            },
+        );
+    }
+
     pub async fn connect_ftp(
         &mut self,
         app: AppHandle,
@@ -156,6 +186,18 @@ impl ConnectionPool {
             ConnectionKind::Ftp { client } => {
                 ftp::disconnect_client(&client).await;
             }
+            ConnectionKind::Local {
+                mut child,
+                input_tx,
+                reader_task,
+                writer_task,
+                ..
+            } => {
+                drop(input_tx);
+                reader_task.abort();
+                writer_task.abort();
+                let _ = child.kill();
+            }
         }
 
         Ok(())
@@ -169,6 +211,9 @@ impl ConnectionPool {
                     IpcError::with_str_detail("connection.sendDataFailed", "raw", e.to_string())
                 })
             }
+            ConnectionKind::Local { input_tx, .. } => input_tx.send(data).map_err(|e| {
+                IpcError::with_str_detail("connection.sendDataFailed", "raw", e.to_string())
+            }),
             ConnectionKind::Ftp { .. } => Err(IpcError::new("connection.writeNotSupported")),
         }
     }
@@ -178,6 +223,16 @@ impl ConnectionPool {
         match &handle.kind {
             ConnectionKind::Ssh { input_tx, .. } => input_tx
                 .send(ChannelCommand::Resize { cols, rows })
+                .map_err(|e| {
+                    IpcError::with_str_detail("connection.resizeFailed", "raw", e.to_string())
+                }),
+            ConnectionKind::Local { master, .. } => master
+                .resize(portable_pty::PtySize {
+                    rows: rows as u16,
+                    cols: cols as u16,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
                 .map_err(|e| {
                     IpcError::with_str_detail("connection.resizeFailed", "raw", e.to_string())
                 }),
@@ -196,6 +251,7 @@ impl ConnectionPool {
                 Ok(entries)
             }
             ConnectionKind::Ftp { client } => ftp::list_dir(client, path).await,
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -206,6 +262,7 @@ impl ConnectionPool {
                 ssh_handle, sftp, ..
             } => crate::services::sftp::count_files(ssh_handle, sftp, remote_path).await,
             ConnectionKind::Ftp { client } => ftp::count_files(client, remote_path).await,
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -225,6 +282,7 @@ impl ConnectionPool {
             ConnectionKind::Ftp { client } => Ok(TransferContext::Ftp {
                 client: client.clone(),
             }),
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -242,6 +300,7 @@ impl ConnectionPool {
             ConnectionKind::Ftp { client } => Ok(BrowseContext::Ftp {
                 client: client.clone(),
             }),
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -268,6 +327,7 @@ impl ConnectionPool {
             ConnectionKind::Ftp { client } => {
                 ftp::list_files_recursive(client, remote_path).await
             }
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -278,6 +338,7 @@ impl ConnectionPool {
                 ssh_handle, sftp, ..
             } => crate::services::sftp::mkdir(ssh_handle, sftp, remote_path).await,
             ConnectionKind::Ftp { client } => ftp::mkdir(client, remote_path).await,
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -293,6 +354,7 @@ impl ConnectionPool {
                 ssh_handle, sftp, ..
             } => crate::services::sftp::delete(ssh_handle, sftp, remote_path, is_directory).await,
             ConnectionKind::Ftp { client } => ftp::delete(client, remote_path, is_directory).await,
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -308,6 +370,7 @@ impl ConnectionPool {
                 ssh_handle, sftp, ..
             } => crate::services::sftp::rename(ssh_handle, sftp, old_path, new_path).await,
             ConnectionKind::Ftp { client } => ftp::rename(client, old_path, new_path).await,
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 
@@ -323,6 +386,7 @@ impl ConnectionPool {
                 ssh_handle, sftp, ..
             } => crate::services::sftp::fetch_to_cache(app, ssh_handle, sftp, remote_path).await,
             ConnectionKind::Ftp { client } => ftp::fetch_to_cache(app, client, remote_path).await,
+            ConnectionKind::Local { .. } => Err(IpcError::new("connection.notSupported")),
         }
     }
 

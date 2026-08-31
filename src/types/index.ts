@@ -45,9 +45,11 @@ export {
 
 export type {
   TerminalTab,
+  TerminalTabKind,
   WorkspaceView,
   ConnectionStatusPayload,
   TerminalOutputPayload,
+  ShellInfo,
 } from './terminal';
 
 export { sftpEntrySchema } from './sftp';

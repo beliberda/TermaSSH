@@ -50,6 +50,15 @@ export const FileBrowserPanel = observer(function FileBrowserPanel() {
     );
   }
 
+  if (activeTab.kind === 'local') {
+    return (
+      <div className={styles.placeholder}>
+        <p className={styles.title}>{t('files.title')}</p>
+        <p className={styles.hint}>{t('files.localConsole')}</p>
+      </div>
+    );
+  }
+
   if (activeTab.status === 'connecting') {
     return (
       <div className={styles.placeholder}>
